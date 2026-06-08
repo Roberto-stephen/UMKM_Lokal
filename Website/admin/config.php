@@ -24,8 +24,8 @@ mysqli_set_charset($conn, 'utf8');
 // Konfigurasi Umum Website
 // -----------------------------------------------
 define('SITE_NAME',  'E-Commerce UMKM Makanan Lokal');
-define('SITE_URL',   'http://localhost/Website');   // sesuaikan nama folder kamu
-define('UPLOAD_DIR', $_SERVER['DOCUMENT_ROOT'] . '/Website/uploads/');
+define('SITE_URL',   'http://e-commerce.test');
+define('UPLOAD_DIR', $_SERVER['DOCUMENT_ROOT'] . '/uploads/');
 
 // -----------------------------------------------
 // Mulai session (cukup dipanggil sekali)
