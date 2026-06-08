@@ -1,832 +1,447 @@
 <?php
-
-	/*
-	================================================
-	== Items Page
-	================================================
-	*/
-
-	ob_start(); // Output Buffering Start
-
-	session_start();
-
-	$pageTitle = 'Items';
-
-	if (isset($_SESSION['Username'])) {
-
-		include 'init.php';
-
-		$do = isset($_GET['do']) ? $_GET['do'] : 'Manage';
-
-		if ($do == 'Manage') {
-
-
-			$stmt = $con->prepare("SELECT 
-										items.*, 
-										categories.Name AS category_name, 
-										users.Username 
-									FROM 
-										items
-									INNER JOIN 
-										categories 
-									ON 
-										categories.ID = items.Cat_ID 
-									INNER JOIN 
-										users 
-									ON 
-										users.UserID = items.Member_ID
-									ORDER BY 
-										Item_ID DESC");
-
-			// Execute The Statement
-
-			$stmt->execute();
-
-			// Assign To Variable 
-
-			$items = $stmt->fetchAll();
-
-			if (! empty($items)) {
-
-			?>
-
-			<h1 class="text-center">Manage Items</h1>
-			<div class="container">
-				<div class="table-responsive">
-					<table class="main-table manage-members text-center table table-bordered">
-						<tr>
-							<td>Picture</td>
-							<td>Item Name</td>
-							<td>Price</td>
-							<td>Adding Date</td>
-							<td>Category</td>
-							<td>Owner</td>
-							<td>Action</td>
-						</tr>
-						<?php
-							foreach($items as $item) {
-								echo "<tr>";
-									echo "<td>";
-									if (empty($item['picture'])) {
-										echo "<img src='uploads/default.png' alt='' />";
-									} else {
-										echo "<img src='uploads/items/" . $item['picture'] . "' alt='' />";
-									}
-									echo "</td>";
-									echo "<td>" . $item['Name'] . "</td>";
-									echo "<td>" . $item['Price'] . "</td>";
-									echo "<td>" . $item['Add_Date'] ."</td>";
-									echo "<td>" . $item['category_name'] ."</td>";
-									echo "<td>" . $item['Username'] ."</td>";
-									echo "<td>
-										<a href='items.php?do=Edit&itemid=" . $item['Item_ID'] . "' class='btn btn-success'><i class='fa fa-edit'></i> Edit</a>
-										<a href='items.php?do=Delete&itemid=" . $item['Item_ID'] . "' class='btn btn-danger confirm'><i class='fa fa-close'></i> Delete </a>";
-										if ($item['Approve'] == 0) {
-											echo "<a 
-													href='items.php?do=Approve&itemid=" . $item['Item_ID'] . "' 
-													class='btn btn-info activate'>
-													<i class='fa fa-check'></i> Approve</a>";
-										}
-									echo "</td>";
-								echo "</tr>";
-							}
-						?>
-						<tr>
-					</table>
-				</div>
-				<a href="items.php?do=Add" class="btn btn-sm btn-primary">
-					<i class="fa fa-plus"></i> New Item
-				</a>
-			</div>
-
-			<?php } else {
-
-				echo '<div class="container">';
-					echo '<div class="nice-message">There\'s No Items To Show</div>';
-					echo '<a href="items.php?do=Add" class="btn btn-sm btn-primary">
-							<i class="fa fa-plus"></i> New Item
-						</a>';
-				echo '</div>';
-
-			} ?>
-
-		<?php 
-
-		} elseif ($do == 'Add') { ?>
-
-			<h1 class="text-center">Add New Item</h1>
-			<div class="container">
-				<form class="form-horizontal" action="?do=Insert" method="POST" enctype="multipart/form-data">
-					<!-- Start Name Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Name</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="text" 
-								name="name" 
-								class="form-control" 
-								required="required"  
-								placeholder="Name of The Item" />
-						</div>
-					</div>
-					<!-- End Name Field -->
-					<!-- Start Description Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Description</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="text" 
-								name="description" 
-								class="form-control" 
-								required="required"  
-								placeholder="Description of The Item" />
-						</div>
-					</div>
-					<!-- End Description Field -->
-					<!-- Start Price Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Contact</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="text" 
-								name="contact" 
-								class="form-control" 
-								required="required" 
-								placeholder="Phone Number of the Item owner" />
-						</div>
-					</div>
-					<!-- End Price Field -->
-					<!-- Start Price Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Price</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="text" 
-								name="price" 
-								class="form-control" 
-								required="required" 
-								placeholder="Price of The Item" />
-						</div>
-					</div>
-					<!-- End Price Field -->
-					<!-- Start Country Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Country</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="text" 
-								name="country" 
-								class="form-control" 
-								required="required" 
-								placeholder="Country of Made" />
-						</div>
-					</div>
-					<!-- End Country Field -->
-					<!-- Start Status Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Status</label>
-						<div class="col-sm-10 col-md-6">
-							<select name="status">
-								<option value="0">...</option>
-								<option value="1">New</option>
-								<option value="2">Like New</option>
-								<option value="3">Used</option>
-								<option value="4">Very Old</option>
-							</select>
-						</div>
-					</div>
-					<!-- End Status Field -->
-					<!-- Start Members Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Member</label>
-						<div class="col-sm-10 col-md-6">
-							<select name="member">
-								<option value="0">...</option>
-								<?php
-									$allMembers = getAllFrom("*", "users", "", "", "UserID");
-									foreach ($allMembers as $user) {
-										echo "<option value='" . $user['UserID'] . "'>" . $user['Username'] . "</option>";
-									}
-								?>
-							</select>
-						</div>
-					</div>
-					<!-- End Members Field -->
-					<!-- Start Categories Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Category</label>
-						<div class="col-sm-10 col-md-6">
-							<select name="category">
-								<option value="0">...</option>
-								<?php
-									$allCats = getAllFrom("*", "categories", "where parent = 0", "", "ID");
-									foreach ($allCats as $cat) {
-										echo "<option value='" . $cat['ID'] . "'>" . $cat['Name'] . "</option>";
-										$childCats = getAllFrom("*", "categories", "where parent = {$cat['ID']}", "", "ID");
-										foreach ($childCats as $child) {
-											echo "<option value='" . $child['ID'] . "'>--- " . $child['Name'] . "</option>";
-										}
-									}
-								?>
-							</select>
-						</div>
-					</div>
-					<!-- End Categories Field -->
-					<!-- Start Tags Field -->
-					<div class="form-group form-group-lg">
-						<label class="col-sm-2 control-label">Picture</label>
-						<div class="col-sm-10 col-md-6">
-							<input 
-								type="file" 
-								name="picture" 
-								class="form-control"  />
-						</div>
-					</div>
-					<!-- End Tags Field -->
-					<!-- Start Submit Field -->
-					<div class="form-group form-group-lg">
-						<div class="col-sm-offset-2 col-sm-10">
-							<input type="submit" value="Add Item" class="btn btn-primary btn-sm" />
-						</div>
-					</div>
-					<!-- End Submit Field -->
-				</form>
-			</div>
-
-			<?php
-
-		} elseif ($do == 'Insert') {
-
-			if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-
-				echo "<h1 class='text-center'>Insert Item</h1>";
-				echo "<div class='container'>";
-
-				// Upload Variables
-
-				$avatarName = $_FILES['picture']['name'];
-				$avatarSize = $_FILES['picture']['size'];
-				$avatarTmp	= $_FILES['picture']['tmp_name'];
-				$avatarType = $_FILES['picture']['type'];
-
-				// List Of Allowed File Typed To Upload
-
-				$avatarAllowedExtension = array("jpeg", "jpg", "png", "gif");
-
-				// Get Avatar Extension
-				
-				$ref = explode('.', $avatarName);
-				$avatarExtension = strtolower(end($ref));
-
-				// Get Variables From The Form
-
-				$name		= $_POST['name'];
-				$desc 		= $_POST['description'];
-				$price 		= $_POST['price'];
-				$country 	= $_POST['country'];
-				$status 	= $_POST['status'];
-				$member 	= $_POST['member'];
-				$cat 		= $_POST['category'];
-				$contact	= $_POST['contact'];
-
-				// Validate The Form
-
-				$formErrors = array();
-
-				if (empty($name)) {
-					$formErrors[] = 'Name Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($desc)) {
-					$formErrors[] = 'Description Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($contact)) {
-					$formErrors[] = 'Contact Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($price)) {
-					$formErrors[] = 'Price Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($country)) {
-					$formErrors[] = 'Country Can\'t be <strong>Empty</strong>';
-				}
-
-				if ($status == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Status</strong>';
-				}
-
-				if ($member == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Member</strong>';
-				}
-
-				if ($cat == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Category</strong>';
-				}
-
-				if (! empty($avatarName) && ! in_array($avatarExtension, $avatarAllowedExtension)) {
-					$formErrors[] = 'This Extension Is Not <strong>Allowed</strong>';
-				}
-
-				if (empty($avatarName)) {
-					$formErrors[] = 'Item Picture Is <strong>Required</strong>';
-				}
-
-				if ($avatarSize > 4194304) {
-					$formErrors[] = 'Avatar Cant Be Larger Than <strong>4MB</strong>';
-				}
-
-				// Loop Into Errors Array And Echo It
-
-				foreach($formErrors as $error) {
-					echo '<div class="alert alert-danger">' . $error . '</div>';
-				}
-
-				// Check If There's No Error Proceed The Update Operation
-
-				if (empty($formErrors)) {
-
-					$avatar = rand(0, 10000000000) . '_' . $avatarName;
-
-					move_uploaded_file($avatarTmp, "uploads\items\\" . $avatar);
-
-					// Insert Userinfo In Database
-
-					$stmt = $con->prepare("INSERT INTO 
-
-						items(Name, Description, Price, Country_Made, Status, Add_Date, Cat_ID, Member_ID, picture, contact)
-
-						VALUES(:zname, :zdesc, :zprice, :zcountry, :zstatus, now(), :zcat, :zmember, :zpicture, :zcontact)");
-
-					$stmt->execute(array(
-
-						'zname' 	=> $name,
-						'zdesc' 	=> $desc,
-						'zprice' 	=> $price,
-						'zcountry' 	=> $country,
-						'zstatus' 	=> $status,
-						'zcat'		=> $cat,
-						'zmember'	=> $member,
-						'zpicture'	=> $avatar,
-						'zcontact'	=> $contact
-
-					));
-
-					// Echo Success Message
-
-					$theMsg = "<div class='alert alert-success'>" . $stmt->rowCount() . ' Record Inserted</div>';
-
-					$seconds = 3;
-
-					echo $theMsg;
-
-					echo "<div class='alert alert-info'>You Will Be Redirected After $seconds Seconds.</div>";
-		
-					header("refresh:$seconds;url='items.php'");
-				}
-
-			} else {
-
-				echo "<div class='container'>";
-
-				$theMsg = '<div class="alert alert-danger">Sorry You Cant Browse This Page Directly</div>';
-
-				redirectHome($theMsg);
-
-				echo "</div>";
-
-			}
-
-			echo "</div>";
-
-		} elseif ($do == 'Edit') {
-
-			// Check If Get Request item Is Numeric & Get Its Integer Value
-
-			$itemid = isset($_GET['itemid']) && is_numeric($_GET['itemid']) ? intval($_GET['itemid']) : 0;
-
-			// Select All Data Depend On This ID
-
-			$stmt = $con->prepare("SELECT * FROM items WHERE Item_ID = ?");
-
-			// Execute Query
-
-			$stmt->execute(array($itemid));
-
-			// Fetch The Data
-
-			$item = $stmt->fetch();
-
-			// The Row Count
-
-			$count = $stmt->rowCount();
-
-			// If There's Such ID Show The Form
-
-			if ($count > 0) { ?>
-
-				<h1 class="text-center">Edit Item</h1>
-				<div class="container">
-					<form class="form-horizontal" action="?do=Update" method="POST">
-						<input type="hidden" name="itemid" value="<?php echo $itemid ?>" />
-						<!-- Start Name Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Name</label>
-							<div class="col-sm-10 col-md-6">
-								<input 
-									type="text" 
-									name="name" 
-									class="form-control" 
-									required="required"  
-									placeholder="Name of The Item"
-									value="<?php echo $item['Name'] ?>" />
-							</div>
-						</div>
-						<!-- End Name Field -->
-						<!-- Start Description Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Description</label>
-							<div class="col-sm-10 col-md-6">
-								<input 
-									type="text" 
-									name="description" 
-									class="form-control" 
-									required="required"  
-									placeholder="Description of The Item"
-									value="<?php echo $item['Description'] ?>" />
-							</div>
-						</div>
-						<!-- End Description Field -->
-						<!-- Start Contact Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Contact</label>
-							<div class="col-sm-10 col-md-6">
-								<input 
-									type="text" 
-									name="contact" 
-									class="form-control" 
-									required="required" 
-									placeholder="Phone Number of the Item owner"
-									value="<?php echo $item['contact'] ?>" />
-							</div>
-						</div>
-						<!-- End Contact Field -->
-						<!-- Start Price Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Price</label>
-							<div class="col-sm-10 col-md-6">
-								<input 
-									type="text" 
-									name="price" 
-									class="form-control" 
-									required="required" 
-									placeholder="Price of The Item"
-									value="<?php echo $item['Price'] ?>" />
-							</div>
-						</div>
-						<!-- End Price Field -->
-						<!-- Start Country Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Country</label>
-							<div class="col-sm-10 col-md-6">
-								<input 
-									type="text" 
-									name="country" 
-									class="form-control" 
-									required="required" 
-									placeholder="Country of Made"
-									value="<?php echo $item['Country_Made'] ?>" />
-							</div>
-						</div>
-						<!-- End Country Field -->
-						<!-- Start Status Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Status</label>
-							<div class="col-sm-10 col-md-6">
-								<select name="status">
-									<option value="1" <?php if ($item['Status'] == 1) { echo 'selected'; } ?>>New</option>
-									<option value="2" <?php if ($item['Status'] == 2) { echo 'selected'; } ?>>Like New</option>
-									<option value="3" <?php if ($item['Status'] == 3) { echo 'selected'; } ?>>Used</option>
-									<option value="4" <?php if ($item['Status'] == 4) { echo 'selected'; } ?>>Very Old</option>
-								</select>
-							</div>
-						</div>
-						<!-- End Status Field -->
-						<!-- Start Members Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Member</label>
-							<div class="col-sm-10 col-md-6">
-								<select name="member">
-									<?php
-										$allMembers = getAllFrom("*", "users", "", "", "UserID");
-										foreach ($allMembers as $user) {
-											echo "<option value='" . $user['UserID'] . "'"; 
-											if ($item['Member_ID'] == $user['UserID']) { echo 'selected'; } 
-											echo ">" . $user['Username'] . "</option>";
-										}
-									?>
-								</select>
-							</div>
-						</div>
-						<!-- End Members Field -->
-						<!-- Start Categories Field -->
-						<div class="form-group form-group-lg">
-							<label class="col-sm-2 control-label">Category</label>
-							<div class="col-sm-10 col-md-6">
-								<select name="category">
-									<?php
-										$allCats = getAllFrom("*", "categories", "where parent = 0", "", "ID");
-										foreach ($allCats as $cat) {
-											echo "<option value='" . $cat['ID'] . "'";
-											if ($item['Cat_ID'] == $cat['ID']) { echo ' selected'; }
-											echo ">" . $cat['Name'] . "</option>";
-											$childCats = getAllFrom("*", "categories", "where parent = {$cat['ID']}", "", "ID");
-											foreach ($childCats as $child) {
-												echo "<option value='" . $child['ID'] . "'";
-												if ($item['Cat_ID'] == $child['ID']) { echo ' selected'; }
-												echo ">--- " . $child['Name'] . "</option>";
-											}
-										}
-									?>
-								</select>
-							</div>
-						</div>
-						<!-- End Categories Field -->
-						<!-- Start Submit Field -->
-						<div class="form-group form-group-lg">
-							<div class="col-sm-offset-2 col-sm-10">
-								<input type="submit" value="Save Item" class="btn btn-primary btn-sm" />
-							</div>
-						</div>
-						<!-- End Submit Field -->
-					</form>
-
-					<?php
-
-					// Select All Users Except Admin 
-
-					$stmt = $con->prepare("SELECT 
-												comments.*, users.Username AS Member  
-											FROM 
-												comments
-											INNER JOIN 
-												users 
-											ON 
-												users.UserID = comments.user_id
-											WHERE item_id = ?");
-
-					// Execute The Statement
-
-					$stmt->execute(array($itemid));
-
-					// Assign To Variable 
-
-					$rows = $stmt->fetchAll();
-
-					if (! empty($rows)) {
-						
-					?>
-					<h1 class="text-center">Manage [ <?php echo $item['Name'] ?> ] Comments</h1>
-					<div class="table-responsive">
-						<table class="main-table text-center table table-bordered">
-							<tr>
-								<td>Comment</td>
-								<td>User Name</td>
-								<td>Added Date</td>
-								<td>Control</td>
-							</tr>
-							<?php
-								foreach($rows as $row) {
-									echo "<tr>";
-										echo "<td>" . $row['comment'] . "</td>";
-										echo "<td>" . $row['Member'] . "</td>";
-										echo "<td>" . $row['comment_date'] ."</td>";
-										echo "<td>
-											<a href='comments.php?do=Edit&comid=" . $row['c_id'] . "' class='btn btn-success'><i class='fa fa-edit'></i> Edit</a>
-											<a href='comments.php?do=Delete&comid=" . $row['c_id'] . "' class='btn btn-danger confirm'><i class='fa fa-close'></i> Delete </a>";
-											if ($row['status'] == 0) {
-												echo "<a href='comments.php?do=Approve&comid="
-														 . $row['c_id'] . "' 
-														class='btn btn-info activate'>
-														<i class='fa fa-check'></i> Approve</a>";
-											}
-										echo "</td>";
-									echo "</tr>";
-								}
-							?>
-							<tr>
-						</table>
-					</div>
-					<?php } ?>
-				</div>
-
-			<?php
-
-			// If There's No Such ID Show Error Message
-
-			} else {
-
-				echo "<div class='container'>";
-
-				$theMsg = '<div class="alert alert-danger">Theres No Such ID</div>';
-
-				redirectHome($theMsg);
-
-				echo "</div>";
-
-			}			
-
-		} elseif ($do == 'Update') {
-
-			echo "<h1 class='text-center'>Update Item</h1>";
-			echo "<div class='container'>";
-
-			if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-
-				// Get Variables From The Form
-
-				$id 		= $_POST['itemid'];
-				$name 		= $_POST['name'];
-				$desc 		= $_POST['description'];
-				$price 		= $_POST['price'];
-				$country	= $_POST['country'];
-				$status 	= $_POST['status'];
-				$cat 		= $_POST['category'];
-				$member 	= $_POST['member'];
-				$contact 	= $_POST['contact'];
-
-				// Validate The Form
-
-				$formErrors = array();
-
-				if (empty($name)) {
-					$formErrors[] = 'Name Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($desc)) {
-					$formErrors[] = 'Description Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($contact)) {
-					$formErrors[] = 'Contact Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($price)) {
-					$formErrors[] = 'Price Can\'t be <strong>Empty</strong>';
-				}
-
-				if (empty($country)) {
-					$formErrors[] = 'Country Can\'t be <strong>Empty</strong>';
-				}
-
-				if ($status == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Status</strong>';
-				}
-
-				if ($member == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Member</strong>';
-				}
-
-				if ($cat == 0) {
-					$formErrors[] = 'You Must Choose the <strong>Category</strong>';
-				}
-
-				// Loop Into Errors Array And Echo It
-
-				foreach($formErrors as $error) {
-					echo '<div class="alert alert-danger">' . $error . '</div>';
-				}
-
-				// Check If There's No Error Proceed The Update Operation
-
-				if (empty($formErrors)) {
-
-					// Update The Database With This Info
-
-					$stmt = $con->prepare("UPDATE 
-												items 
-											SET 
-												Name = ?, 
-												Description = ?, 
-												Price = ?, 
-												Country_Made = ?,
-												Status = ?,
-												Cat_ID = ?,
-												Member_ID = ?,
-												contact = ?
-											WHERE 
-												Item_ID = ?");
-
-					$stmt->execute(array($name, $desc, $price, $country, $status, $cat, $member, $contact, $id));
-
-					// Echo Success Message
-
-					$theMsg = "<div class='alert alert-success'>" . $stmt->rowCount() . ' Record Updated</div>';
-
-					$seconds = 3;
-
-					echo $theMsg;
-
-					echo "<div class='alert alert-info'>You Will Be Redirected After $seconds Seconds.</div>";
-		
-					header("refresh:$seconds;url='items.php'");
-
-				}
-
-			} else {
-
-				$theMsg = '<div class="alert alert-danger">Sorry You Cant Browse This Page Directly</div>';
-
-				redirectHome($theMsg);
-
-			}
-
-			echo "</div>";
-
-		} elseif ($do == 'Delete') {
-
-			echo "<h1 class='text-center'>Delete Item</h1>";
-			echo "<div class='container'>";
-
-				// Check If Get Request Item ID Is Numeric & Get The Integer Value Of It
-
-				$itemid = isset($_GET['itemid']) && is_numeric($_GET['itemid']) ? intval($_GET['itemid']) : 0;
-
-				// Select All Data Depend On This ID
-
-				$check = checkItem('Item_ID', 'items', $itemid);
-
-				// If There's Such ID Show The Form
-
-				if ($check > 0) {
-
-					$stmt = $con->prepare("DELETE FROM items WHERE Item_ID = :zid");
-
-					$stmt->bindParam(":zid", $itemid);
-
-					$stmt->execute();
-
-					$theMsg = "<div class='alert alert-success'>" . $stmt->rowCount() . ' Record Deleted</div>';
-
-					redirectHome($theMsg, 'back');
-
-				} else {
-
-					$theMsg = '<div class="alert alert-danger">This ID is Not Exist</div>';
-
-					redirectHome($theMsg);
-
-				}
-
-			echo '</div>';
-
-		} elseif ($do == 'Approve') {
-
-			echo "<h1 class='text-center'>Approve Item</h1>";
-			echo "<div class='container'>";
-
-				// Check If Get Request Item ID Is Numeric & Get The Integer Value Of It
-
-				$itemid = isset($_GET['itemid']) && is_numeric($_GET['itemid']) ? intval($_GET['itemid']) : 0;
-
-				// Select All Data Depend On This ID
-
-				$check = checkItem('Item_ID', 'items', $itemid);
-
-				// If There's Such ID Show The Form
-
-				if ($check > 0) {
-
-					$stmt = $con->prepare("UPDATE items SET Approve = 1 WHERE Item_ID = ?");
-
-					$stmt->execute(array($itemid));
-
-					$theMsg = "<div class='alert alert-success'>" . $stmt->rowCount() . ' Record Updated</div>';
-
-					redirectHome($theMsg, 'back');
-
-				} else {
-
-					$theMsg = '<div class="alert alert-danger">This ID is Not Exist</div>';
-
-					redirectHome($theMsg);
-
-				}
-
-			echo '</div>';
-
-		}
-
-		include $tpl . 'footer.php';
-
-	} else {
-
-		header('Location: index.php');
-
-		exit();
-	}
-
-	ob_end_flush(); // Release The Output
-
+ob_start();
+session_start();
+
+$pageTitle = 'Items';
+if (!isset($_SESSION['Username'])) { header('Location: index.php'); exit(); }
+include 'init.php';
+
+$do = $_GET['do'] ?? 'Manage';
+
+// -------------------------------------------------------
+// Helper: Banner merah di atas konten halaman
+// -------------------------------------------------------
+function adminPageBanner($title, $sub = '') {
+    echo '<div style="background:linear-gradient(135deg,#B5272A,#D44040);color:#fff;padding:20px 0;margin:-22px -22px 24px -22px;">
+        <div style="padding:0 22px;">
+            <div style="font-size:11px;opacity:.6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Admin Panel</div>
+            <div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:700;">' . $title . '</div>
+            ' . ($sub ? '<div style="font-size:12px;opacity:.7;margin-top:3px;">' . $sub . '</div>' : '') . '
+        </div>
+    </div>';
+}
+
+// -------------------------------------------------------
+// MANAGE — Daftar semua produk
+// -------------------------------------------------------
+if ($do === 'Manage') {
+
+    $filterApprove = $_GET['filter'] ?? '';
+    $whereClause   = '';
+    if ($filterApprove === 'pending') $whereClause = 'WHERE items.Approve = 0';
+    elseif ($filterApprove === 'active') $whereClause = 'WHERE items.Approve = 1';
+
+    $items = [];
+    $pc    = 0;
+    $queryError = '';
+
+    try {
+        $stmt = $con->prepare("
+            SELECT   items.*, 
+                     categories.Name AS category_name, 
+                     users.Username
+            FROM     items
+            LEFT JOIN categories ON categories.ID     = items.Cat_ID
+            LEFT JOIN users      ON users.UserID      = items.Member_ID
+            $whereClause
+            ORDER BY items.Item_ID DESC
+        ");
+        $stmt->execute();
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmtPending = $con->prepare("SELECT COUNT(*) FROM items WHERE Approve = 0");
+        $stmtPending->execute();
+        $pc = (int)$stmtPending->fetchColumn();
+
+    } catch (Exception $e) {
+        $queryError = $e->getMessage();
+    }
+
+    adminPageBanner('Kelola Produk', count($items) . ' produk ditemukan');
+
+    // ---- Toolbar (filter + tombol tambah) ----
+    echo '<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+    echo '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    $filters = ['' => 'Semua', 'pending' => 'Pending (' . $pc . ')', 'active' => 'Aktif'];
+    foreach ($filters as $f => $label) {
+        $active = ($filterApprove === $f);
+        echo '<a href="items.php' . ($f ? '?filter=' . $f : '') . '" 
+                 style="font-size:12px;font-weight:600;padding:6px 16px;border-radius:20px;
+                        background:' . ($active ? '#B5272A' : '#E8ECF5') . ';
+                        color:' . ($active ? '#fff' : '#1B2E5E') . ';
+                        text-decoration:none;">' . $label . '</a>';
+    }
+    echo '</div>';
+    echo '<a href="items.php?do=Add" style="background:#B5272A;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+            <i class="fa fa-plus"></i> Tambah Produk
+          </a>';
+    echo '</div>';
+
+    // ---- Error DB ----
+    if ($queryError) {
+        echo '<div style="background:#FDECEA;color:#9B1C1C;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;">
+                <i class="fa fa-exclamation-triangle"></i> Gagal memuat data: ' . htmlspecialchars($queryError) . '
+              </div>';
+    }
+
+    // ---- Tabel produk ----
+    if (!empty($items)) {
+        echo '<div style="background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;overflow:hidden;">';
+        echo '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        echo '<thead><tr style="background:#B5272A;color:#fff;">';
+        foreach (['Foto', 'Nama Produk', 'Harga', 'Stok', 'Kategori', 'Penjual', 'Tanggal', 'Status', 'Aksi'] as $h) {
+            echo '<th style="padding:11px 14px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;text-align:left;white-space:nowrap;">' . $h . '</th>';
+        }
+        echo '</tr></thead><tbody>';
+
+        foreach ($items as $i => $item) {
+            $bg   = ($i % 2 === 0) ? '#fff' : '#F7F8FA';
+            $pic  = (!empty($item['picture']) && $item['picture'] !== 'default.png')
+                        ? 'uploads/items/' . htmlspecialchars($item['picture'])
+                        : 'uploads/items/default.png';
+            $stok = $item['stok'] ?? null;
+            $stokLabel = ($stok === null) ? '-' : $stok;
+            if ($stok === null)   $stokColor = '#9A9AB0';
+            elseif ($stok > 10)   $stokColor = '#1A5C2A';
+            elseif ($stok > 0)    $stokColor = '#92400E';
+            else                  $stokColor = '#9B1C1C';
+
+            echo '<tr style="background:' . $bg . ';border-bottom:1px solid #EEF0F6;transition:background .1s;" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'' . $bg . '\'">';
+            echo '<td style="padding:8px 14px;"><img src="' . $pic . '" style="width:44px;height:44px;object-fit:cover;border-radius:8px;background:#EEF0F6;border:1px solid #DDE1EC;" onerror="this.style.background=\'#EEF0F6\';this.src=\'uploads/items/default.png\'"></td>';
+            echo '<td style="padding:8px 14px;font-weight:600;color:#1B2E5E;max-width:180px;"><span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;" title="' . htmlspecialchars($item['Name']) . '">' . htmlspecialchars($item['Name']) . '</span></td>';
+            echo '<td style="padding:8px 14px;font-weight:600;color:#B5272A;white-space:nowrap;">Rp ' . number_format($item['Price'], 0, ',', '.') . '</td>';
+            echo '<td style="padding:8px 14px;font-weight:600;color:' . $stokColor . ';">' . $stokLabel . '</td>';
+            echo '<td style="padding:8px 14px;color:#4A4A6A;">' . htmlspecialchars($item['category_name'] ?? '-') . '</td>';
+            echo '<td style="padding:8px 14px;color:#4A4A6A;">' . htmlspecialchars($item['Username'] ?? '-') . '</td>';
+            echo '<td style="padding:8px 14px;color:#9A9AB0;font-size:11px;white-space:nowrap;">' . htmlspecialchars($item['Add_Date'] ?? '') . '</td>';
+            echo '<td style="padding:8px 14px;">';
+            if ($item['Approve'] == 0)
+                echo '<span style="background:#FEF3C7;color:#92400E;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;">Pending</span>';
+            else
+                echo '<span style="background:#EAF5ED;color:#1A5C2A;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;">Aktif</span>';
+            echo '</td>';
+            echo '<td style="padding:8px 14px;white-space:nowrap;">';
+            if ($item['Approve'] == 0)
+                echo '<a href="items.php?do=Approve&itemid=' . $item['Item_ID'] . '" style="background:#EAF5ED;color:#1A5C2A;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:600;margin-right:3px;text-decoration:none;display:inline-block;"><i class="fa fa-check"></i> Approve</a>';
+            echo '<a href="items.php?do=Edit&itemid=' . $item['Item_ID'] . '" style="background:#1B2E5E;color:#fff;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:600;margin-right:3px;text-decoration:none;display:inline-block;"><i class="fa fa-edit"></i> Edit</a>';
+            echo '<a href="items.php?do=Delete&itemid=' . $item['Item_ID'] . '" onclick="return confirm(\'Hapus produk ini? Tindakan tidak dapat dibatalkan.\')" style="background:#FDECEA;color:#9B1C1C;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;display:inline-block;"><i class="fa fa-trash"></i></a>';
+            echo '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+
+    } else {
+        // Empty state
+        echo '<div style="background:#fff;border-radius:14px;padding:60px 24px;text-align:center;border:1px solid #DDE1EC;">
+                <i class="fa fa-tag" style="font-size:40px;color:#DDE1EC;margin-bottom:14px;display:block;"></i>
+                <div style="font-size:16px;font-weight:600;color:#4A4A6A;margin-bottom:6px;">Belum ada produk</div>
+                <div style="font-size:13px;color:#9A9AB0;margin-bottom:20px;">Mulai dengan menambahkan produk pertama</div>
+                <a href="items.php?do=Add" style="background:#B5272A;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+                  <i class="fa fa-plus"></i> Tambah Produk
+                </a>
+              </div>';
+    }
+
+// -------------------------------------------------------
+// ADD — Form tambah produk baru
+// -------------------------------------------------------
+} elseif ($do === 'Add') {
+
+    adminPageBanner('Tambah Produk Baru');
+
+    try {
+        $allCats    = $con->query("SELECT ID, Name FROM categories WHERE parent = 0 ORDER BY Name ASC")->fetchAll();
+        $allMembers = $con->query("SELECT UserID, Username FROM users ORDER BY Username ASC")->fetchAll();
+    } catch (Exception $e) {
+        $allCats = $allMembers = [];
+    }
+
+    echo '<div style="max-width:760px;">';
+    echo '<div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;">';
+    echo '<form action="items.php?do=Insert" method="POST" enctype="multipart/form-data">';
+
+    // Row 1: Nama + Harga + Stok
+    echo '<div class="row">';
+    echo '<div class="col-md-6"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">NAMA PRODUK *</label>
+            <input type="text" name="name" class="form-control" required placeholder="Nama produk">
+          </div></div>';
+    echo '<div class="col-md-3"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">HARGA *</label>
+            <input type="number" name="price" class="form-control" required min="0" placeholder="0">
+          </div></div>';
+    echo '<div class="col-md-3"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">STOK</label>
+            <input type="number" name="stok" class="form-control" min="0" value="0">
+          </div></div>';
+    echo '</div>';
+
+    // Deskripsi
+    echo '<div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">DESKRIPSI *</label>
+            <textarea name="description" class="form-control" rows="3" required placeholder="Deskripsi produk..."></textarea>
+          </div>';
+
+    // Row 3: Kontak + Kategori + Pemilik
+    echo '<div class="row">';
+    echo '<div class="col-md-4"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">KONTAK</label>
+            <input type="text" name="contact" class="form-control" placeholder="No. HP / WA">
+          </div></div>';
+    echo '<div class="col-md-4"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">KATEGORI</label>
+            <select name="category" class="form-control">';
+    foreach ($allCats as $cat)
+        echo '<option value="' . $cat['ID'] . '">' . htmlspecialchars($cat['Name']) . '</option>';
+    echo '</select></div></div>';
+    echo '<div class="col-md-4"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">PEMILIK</label>
+            <select name="member" class="form-control">';
+    foreach ($allMembers as $u)
+        echo '<option value="' . $u['UserID'] . '">' . htmlspecialchars($u['Username']) . '</option>';
+    echo '</select></div></div>';
+    echo '</div>';
+
+    // Row 4: Status Approve + Foto
+    echo '<div class="row">';
+    echo '<div class="col-md-4"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">STATUS</label>
+            <select name="approve" class="form-control">
+              <option value="1">Langsung Aktif</option>
+              <option value="0">Pending Review</option>
+            </select>
+          </div></div>';
+    echo '<div class="col-md-8"><div class="form-group">
+            <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">FOTO PRODUK</label>
+            <input type="file" name="picture" class="form-control" accept="image/*">
+            <small style="color:#9A9AB0;font-size:11px;">JPG / PNG, maks. 2MB</small>
+          </div></div>';
+    echo '</div>';
+
+    echo '<hr style="border-color:#EEF0F6;margin:8px 0 20px;">';
+    echo '<button type="submit" class="btn btn-danger"><i class="fa fa-plus"></i> Tambah Produk</button>
+          &nbsp;
+          <a href="items.php" style="color:#9A9AB0;font-size:14px;margin-left:8px;">Batal</a>';
+    echo '</form>';
+    echo '</div></div>';
+
+// -------------------------------------------------------
+// INSERT — Simpan produk baru ke DB
+// -------------------------------------------------------
+} elseif ($do === 'Insert' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    $name        = trim($_POST['name']        ?? '');
+    $desc        = trim($_POST['description'] ?? '');
+    $price       = (float)($_POST['price']    ?? 0);
+    $stok        = (int)($_POST['stok']       ?? 0);
+    $cat         = (int)($_POST['category']   ?? 0);
+    $member      = (int)($_POST['member']     ?? 0);
+    $contact     = trim($_POST['contact']     ?? '');
+    $approve     = (int)($_POST['approve']    ?? 1);
+    $country     = 'Indonesia';
+    $status      = 1;
+    $addDate     = date('Y-m-d H:i:s');
+    $pictureName = 'default.png';
+
+    // Upload foto
+    if (!empty($_FILES['picture']['name'])) {
+        $ext     = strtolower(pathinfo($_FILES['picture']['name'], PATHINFO_EXTENSION));
+        $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (in_array($ext, $allowed) && $_FILES['picture']['size'] <= 2097152) {
+            $pictureName = uniqid('item_') . '.' . $ext;
+            $uploadDir   = 'uploads/items/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+            move_uploaded_file($_FILES['picture']['tmp_name'], $uploadDir . $pictureName);
+        }
+    }
+
+    try {
+        $con->prepare("
+            INSERT INTO items
+                (Name, Description, Price, Country_Made, Status, Cat_ID, Member_ID, contact, stok, Approve, Add_Date, picture)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ")->execute([$name, $desc, $price, $country, $status, $cat, $member, $contact, $stok, $approve, $addDate, $pictureName]);
+
+        adminPageBanner('Produk Berhasil Ditambahkan');
+        echo '<div class="alert alert-success"><i class="fa fa-check-circle"></i> Produk <strong>' . htmlspecialchars($name) . '</strong> berhasil ditambahkan. <a href="items.php">Kembali ke daftar &rarr;</a></div>';
+    } catch (Exception $e) {
+        adminPageBanner('Gagal Menambah Produk');
+        echo '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> Error: ' . htmlspecialchars($e->getMessage()) . '</div>';
+    }
+
+// -------------------------------------------------------
+// EDIT — Form edit produk
+// -------------------------------------------------------
+} elseif ($do === 'Edit') {
+
+    $itemid = (isset($_GET['itemid']) && is_numeric($_GET['itemid'])) ? (int)$_GET['itemid'] : 0;
+
+    try {
+        $stmt = $con->prepare("SELECT * FROM items WHERE Item_ID = ? LIMIT 1");
+        $stmt->execute([$itemid]);
+        $item = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $item = null;
+    }
+
+    if (!$item) {
+        echo '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> Produk tidak ditemukan. <a href="items.php">Kembali</a></div>';
+    } else {
+        adminPageBanner('Edit Produk: ' . htmlspecialchars($item['Name']));
+
+        try {
+            $allCats    = $con->query("SELECT ID, Name FROM categories WHERE parent = 0 ORDER BY Name ASC")->fetchAll();
+            $allMembers = $con->query("SELECT UserID, Username FROM users ORDER BY Username ASC")->fetchAll();
+        } catch (Exception $e) {
+            $allCats = $allMembers = [];
+        }
+
+        echo '<div style="max-width:760px;">';
+        echo '<div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;">';
+        echo '<form action="items.php?do=Update" method="POST" enctype="multipart/form-data">';
+        echo '<input type="hidden" name="itemid" value="' . $itemid . '">';
+
+        echo '<div class="row">';
+        echo '<div class="col-md-6"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">NAMA PRODUK *</label>
+                <input type="text" name="name" class="form-control" required value="' . htmlspecialchars($item['Name']) . '">
+              </div></div>';
+        echo '<div class="col-md-3"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">HARGA *</label>
+                <input type="number" name="price" class="form-control" required value="' . $item['Price'] . '">
+              </div></div>';
+        echo '<div class="col-md-3"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">STOK</label>
+                <input type="number" name="stok" class="form-control" min="0" value="' . ($item['stok'] ?? 0) . '">
+              </div></div>';
+        echo '</div>';
+
+        echo '<div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">DESKRIPSI *</label>
+                <textarea name="description" class="form-control" rows="3" required>' . htmlspecialchars($item['Description']) . '</textarea>
+              </div>';
+
+        echo '<div class="row">';
+        echo '<div class="col-md-4"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">KONTAK</label>
+                <input type="text" name="contact" class="form-control" value="' . htmlspecialchars($item['contact'] ?? '') . '">
+              </div></div>';
+        echo '<div class="col-md-4"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">KATEGORI</label>
+                <select name="category" class="form-control">';
+        foreach ($allCats as $cat)
+            echo '<option value="' . $cat['ID'] . '"' . ($item['Cat_ID'] == $cat['ID'] ? ' selected' : '') . '>' . htmlspecialchars($cat['Name']) . '</option>';
+        echo '</select></div></div>';
+        echo '<div class="col-md-4"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">PEMILIK</label>
+                <select name="member" class="form-control">';
+        foreach ($allMembers as $u)
+            echo '<option value="' . $u['UserID'] . '"' . ($item['Member_ID'] == $u['UserID'] ? ' selected' : '') . '>' . htmlspecialchars($u['Username']) . '</option>';
+        echo '</select></div></div>';
+        echo '</div>';
+
+        echo '<div class="row">';
+        echo '<div class="col-md-4"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">STATUS</label>
+                <select name="approve" class="form-control">
+                  <option value="1"' . ($item['Approve'] == 1 ? ' selected' : '') . '>Aktif</option>
+                  <option value="0"' . ($item['Approve'] == 0 ? ' selected' : '') . '>Pending</option>
+                </select>
+              </div></div>';
+        echo '<div class="col-md-8"><div class="form-group">
+                <label class="control-label" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#4A4A6A;">GANTI FOTO (opsional)</label>
+                <input type="file" name="picture" class="form-control" accept="image/*">
+                <small style="color:#9A9AB0;font-size:11px;">Kosongkan jika tidak ingin mengubah foto</small>
+              </div></div>';
+        echo '</div>';
+
+        echo '<hr style="border-color:#EEF0F6;margin:8px 0 20px;">';
+        echo '<button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Simpan Perubahan</button>
+              &nbsp;
+              <a href="items.php" style="color:#9A9AB0;font-size:14px;margin-left:8px;">Batal</a>';
+        echo '</form>';
+        echo '</div></div>';
+    }
+
+// -------------------------------------------------------
+// UPDATE — Simpan perubahan produk
+// -------------------------------------------------------
+} elseif ($do === 'Update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    $id      = (int)($_POST['itemid']      ?? 0);
+    $name    = trim($_POST['name']         ?? '');
+    $desc    = trim($_POST['description']  ?? '');
+    $price   = (float)($_POST['price']     ?? 0);
+    $stok    = (int)($_POST['stok']        ?? 0);
+    $cat     = (int)($_POST['category']    ?? 0);
+    $member  = (int)($_POST['member']      ?? 0);
+    $contact = trim($_POST['contact']      ?? '');
+    $approve = (int)($_POST['approve']     ?? 1);
+    $country = 'Indonesia';
+    $status  = 1;
+
+    // Ambil foto lama kalau tidak ada upload baru
+    $stmtOld = $con->prepare("SELECT picture FROM items WHERE Item_ID = ? LIMIT 1");
+    $stmtOld->execute([$id]);
+    $oldPic = $stmtOld->fetchColumn() ?: 'default.png';
+
+    $pictureName = $oldPic;
+    if (!empty($_FILES['picture']['name'])) {
+        $ext     = strtolower(pathinfo($_FILES['picture']['name'], PATHINFO_EXTENSION));
+        $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (in_array($ext, $allowed) && $_FILES['picture']['size'] <= 2097152) {
+            $pictureName = uniqid('item_') . '.' . $ext;
+            $uploadDir   = 'uploads/items/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+            move_uploaded_file($_FILES['picture']['tmp_name'], $uploadDir . $pictureName);
+        }
+    }
+
+    try {
+        $con->prepare("
+            UPDATE items
+            SET Name=?, Description=?, Price=?, Country_Made=?, Status=?,
+                Cat_ID=?, Member_ID=?, contact=?, stok=?, Approve=?, picture=?
+            WHERE Item_ID=?
+        ")->execute([$name, $desc, $price, $country, $status, $cat, $member, $contact, $stok, $approve, $pictureName, $id]);
+
+        adminPageBanner('Produk Diperbarui');
+        echo '<div class="alert alert-success"><i class="fa fa-check-circle"></i> Produk berhasil diperbarui. <a href="items.php">Kembali ke daftar &rarr;</a></div>';
+    } catch (Exception $e) {
+        adminPageBanner('Gagal Memperbarui Produk');
+        echo '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> Error: ' . htmlspecialchars($e->getMessage()) . '</div>';
+    }
+
+// -------------------------------------------------------
+// DELETE
+// -------------------------------------------------------
+} elseif ($do === 'Delete') {
+
+    $itemid = (isset($_GET['itemid']) && is_numeric($_GET['itemid'])) ? (int)$_GET['itemid'] : 0;
+    if ($itemid > 0) {
+        try {
+            $con->prepare("DELETE FROM items WHERE Item_ID = ?")->execute([$itemid]);
+        } catch (Exception $e) { /* silent */ }
+    }
+    header('Location: items.php');
+    exit();
+
+// -------------------------------------------------------
+// APPROVE
+// -------------------------------------------------------
+} elseif ($do === 'Approve') {
+
+    $itemid = (isset($_GET['itemid']) && is_numeric($_GET['itemid'])) ? (int)$_GET['itemid'] : 0;
+    if ($itemid > 0) {
+        try {
+            $con->prepare("UPDATE items SET Approve = 1 WHERE Item_ID = ?")->execute([$itemid]);
+        } catch (Exception $e) { /* silent */ }
+    }
+    header('Location: items.php');
+    exit();
+}
+
+include $tpl . 'footer.php';
+ob_end_flush();
 ?>
