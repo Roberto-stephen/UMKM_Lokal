@@ -16,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user       = $_POST['username'];
     $hashedPass = sha1($_POST['password']);
 
+    // RegStatus = 1 dicek untuk kompatibilitas data lama.
+    // Semua akun baru otomatis RegStatus = 1 (lihat bagian SIGNUP).
     $stmt = $con->prepare("SELECT UserID, Username, Password, avatar, GroupID FROM users WHERE Username = ? AND Password = ? AND RegStatus = 1");
     $stmt->execute([$user, $hashedPass]);
     $get  = $stmt->fetch();
@@ -30,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
       else                      { header('Location: index.php'); }
       exit();
     } else {
-      $formErrors[] = 'Username atau password salah, atau akun belum diaktifkan.';
+      $formErrors[] = 'Username atau password salah.';
       $activeTab = 'login';
     }
 
@@ -63,10 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
           }
         }
 
-        $ins = $con->prepare("INSERT INTO users(Username,Password,Email,FullName,RegStatus,Date,avatar) VALUES(?,?,?,?,0,NOW(),?)");
+        // ------------------------------------------------------------
+        // FIX: RegStatus langsung 1 (aktif) — tidak perlu approval admin.
+        // Dulu: RegStatus = 0 (harus diaktifkan admin dulu sebelum bisa login)
+        // ------------------------------------------------------------
+        $ins = $con->prepare("INSERT INTO users(Username,Password,Email,FullName,RegStatus,Date,avatar) VALUES(?,?,?,?,1,NOW(),?)");
         $ins->execute([htmlspecialchars($username), sha1($password), htmlspecialchars($email), htmlspecialchars($fullname), $avatar]);
-        $succesMsg = 'Pendaftaran berhasil! Silakan tunggu aktivasi dari admin.';
-        $activeTab = 'login';
+
+        // Langsung login-kan user setelah daftar (auto-login)
+        $newUserId = $con->lastInsertId();
+        $_SESSION['user']    = $username;
+        $_SESSION['uid']     = $newUserId;
+        $_SESSION['avatar']  = $avatar;
+        $_SESSION['GroupID'] = 0; // default: Pembeli
+
+        header('Location: index.php?welcome=1');
+        exit();
       }
     }
   }

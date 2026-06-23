@@ -81,6 +81,15 @@ function getLatest($select, $table, $order, $limit = 5) {
 
 function _cbfTokenize($text) {
     $text = strtolower(trim($text));
+
+    // ------------------------------------------------------------
+    // FIX: Fusikan frasa negasi "tidak-X" / "tidak X" jadi 1 token
+    // "tidakX". Tanpa ini, "tidak-pedas" akan ter-split jadi
+    // ["tidak","pedas"] sehingga search "pedas" salah match dengan
+    // item yang justru TIDAK pedas (karena hyphen jadi spasi).
+    // ------------------------------------------------------------
+    $text = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $text);
+
     $text = preg_replace('/[^a-z0-9\s]/', ' ', $text);
     return array_filter(
         preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY),
