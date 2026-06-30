@@ -17,6 +17,17 @@ $searchRecs = [];
 if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
     $searchRecs = getRecommendationsByKeyword($lastSearch, 8);
 }
+
+// -------------------------------------------------------
+// SORT — ala ShopeeFood: Relevansi(Terbaru) / Termurah / Termahal / Rating
+// -------------------------------------------------------
+$sortOptions = [
+    'terbaru'  => 'Terbaru',
+    'termurah' => 'Harga Termurah',
+    'termahal' => 'Harga Termahal',
+    'rating'   => 'Rating Tertinggi',
+];
+$sort = isset($_GET['sort']) && isset($sortOptions[$_GET['sort']]) ? $_GET['sort'] : 'terbaru';
 ?>
 
 <!-- ==================== HERO ==================== -->
@@ -61,7 +72,7 @@ if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
         </div>
         <div>
           <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">
-            Rekomendasi CBF untuk kamu
+            Rekomendasi untuk kamu
           </div>
           <div style="font-size:16px;font-weight:700;color:#fff;font-family:'Playfair Display',serif;">
             Karena kamu mencari
@@ -113,7 +124,7 @@ if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
             <?php endif; ?>
 
             <div class="card-img">
-              <span class="price-badge">Rp <?= number_format($rec['Price'],0,',','.') ?></span>
+              <span class="price-badge" style="left:auto;right:8px;">Rp <?= number_format($rec['Price'],0,',','.') ?></span>
               <img src="<?= empty($rec['picture']) ? 'admin/uploads/default.png' : 'admin/uploads/items/'.htmlspecialchars($rec['picture']) ?>"
                    alt="<?= htmlspecialchars($rec['Name']) ?>">
             </div>
@@ -141,18 +152,72 @@ if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
   <?php endif; ?>
 
   <!-- ==================== SEMUA PRODUK ==================== -->
-  <div class="section-head" style="margin-top:<?= $lastSearch && !empty($searchRecs) ? '28px' : '0' ?>;">
-    <h2><?= $lastSearch ? 'Semua Produk' : 'Produk Tersedia' ?></h2>
+  <div class="section-head" style="margin-top:<?= $lastSearch && !empty($searchRecs) ? '28px' : '0' ?>;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <h2 style="margin:0;"><?= $lastSearch ? 'Semua Produk' : 'Produk Tersedia' ?></h2>
+
+    <!-- ============================================================
+         SORT DROPDOWN — custom (bukan native select)
+         ============================================================ -->
+    <div style="position:relative;display:inline-block;" id="sort-dropdown-wrap">
+      <button type="button" onclick="toggleSortMenu()" id="sort-trigger-btn"
+              style="display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid #DDE1EC;
+                     border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;color:#1B2E5E;
+                     cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;">
+        <i class="fa fa-sort" style="color:#9A9AB0;font-size:12px;"></i>
+        Urutkan: <span style="color:#B5272A;"><?= $sortOptions[$sort] ?></span>
+        <i class="fa fa-chevron-down" style="font-size:10px;color:#9A9AB0;margin-left:2px;"></i>
+      </button>
+
+      <div id="sort-menu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;
+           background:#fff;border:1px solid #DDE1EC;border-radius:10px;
+           box-shadow:0 8px 24px rgba(27,46,94,.12);min-width:200px;z-index:50;overflow:hidden;">
+        <?php foreach ($sortOptions as $key => $label):
+          $url = 'index.php?sort=' . $key;
+          $isActive = $sort === $key;
+        ?>
+        <a href="<?= htmlspecialchars($url) ?>"
+           style="display:flex;align-items:center;justify-content:space-between;gap:10px;
+                  padding:10px 16px;font-size:13px;text-decoration:none;
+                  color:<?= $isActive ? '#B5272A' : '#1B2E5E' ?>;
+                  font-weight:<?= $isActive ? '700' : '500' ?>;
+                  background:<?= $isActive ? '#FDECEA' : 'transparent' ?>;
+                  border-bottom:1px solid #F0F2F5;">
+          <?= $label ?>
+          <?php if ($isActive): ?><i class="fa fa-check" style="font-size:11px;"></i><?php endif; ?>
+        </a>
+        <?php endforeach; ?>
+      </div>
+    </div>
   </div>
 
+  <script>
+  function toggleSortMenu() {
+    var menu = document.getElementById('sort-menu');
+    menu.style.display = (menu.style.display === 'none' || menu.style.display === '') ? 'block' : 'none';
+  }
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('sort-dropdown-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+      var menu = document.getElementById('sort-menu');
+      if (menu) menu.style.display = 'none';
+    }
+  });
+  </script>
+
   <?php
+    $orderSql = match($sort) {
+        'termurah' => 'i.Price ASC',
+        'termahal' => 'i.Price DESC',
+        'rating'   => 'i.Rating DESC',
+        default    => 'i.Item_ID DESC',
+    };
     try {
         $stmt = $con->prepare("
             SELECT i.*, c.Name AS category_name
             FROM   items i
             LEFT   JOIN categories c ON c.ID = i.Cat_ID
             WHERE  i.Approve = 1
-            ORDER  BY i.Item_ID DESC
+            ORDER  BY $orderSql
         ");
         $stmt->execute();
         $allItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -182,7 +247,13 @@ if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
           </div>
           <div class="card-desc"><?= htmlspecialchars(substr($item['Description'],0,80)) ?>...</div>
           <div class="card-footer-row">
-            <span class="card-date"><i class="fa fa-calendar-o"></i> <?= $item['Add_Date'] ?></span>
+            <span class="card-date">
+              <?php if ($sort === 'rating'): ?>
+                <i class="fa fa-star" style="color:#F4A261;"></i> <?= number_format($item['Rating']??0,1) ?>/5
+              <?php else: ?>
+                <i class="fa fa-calendar-o"></i> <?= $item['Add_Date'] ?>
+              <?php endif; ?>
+            </span>
             <a href="items.php?itemid=<?= $item['Item_ID'] ?>" class="btn-detail">Lihat &rarr;</a>
           </div>
         </div>

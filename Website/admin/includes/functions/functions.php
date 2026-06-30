@@ -79,6 +79,26 @@ function getLatest($select, $table, $order, $limit = 5) {
 ** CBF — Content-Based Filtering
 ** ============================================================ */
 
+// ------------------------------------------------------------
+// Stopword bahasa Indonesia — kata umum yang harus diabaikan
+// saat tokenisasi karena bukan atribut produk yang bermakna.
+// Tanpa ini, kata seperti "sedang" (kata kerja bantu: "ketika
+// sedang dahaga") bisa salah match dengan atribut kepedasan
+// "sedang" (medium spicy) yang artinya berbeda sama sekali.
+// ------------------------------------------------------------
+function _cbfStopwords() {
+    return [
+        'yang','untuk','dengan','dan','atau','di','ke','dari','pada','ini','itu',
+        'akan','adalah','dapat','bisa','juga','saja','saat','ketika','sedang',
+        'sudah','telah','masih','agar','supaya','karena','sebab','jika','kalau',
+        'tetapi','namun','serta','para','sang','si','nya','mu','ku','tak','tidak',
+        'bukan','belum','pernah','sangat','sekali','lebih','paling','cukup',
+        'banyak','sedikit','semua','setiap','beberapa','suatu','sebuah','satu',
+        'dua','tiga','kita','kami','anda','saya','mereka','dia','ia',
+        'cocok','enak','lezat','nikmat','khas','spesial','favorit','populer',
+    ];
+}
+
 function _cbfTokenize($text) {
     $text = strtolower(trim($text));
 
@@ -91,10 +111,79 @@ function _cbfTokenize($text) {
     $text = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $text);
 
     $text = preg_replace('/[^a-z0-9\s]/', ' ', $text);
+
+    $stopwords = array_flip(_cbfStopwords());
+
     return array_filter(
         preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY),
-        fn($w) => strlen($w) > 1   // buang kata 1 huruf
+        fn($w) => strlen($w) > 1 && !isset($stopwords[$w])
     );
+}
+
+/* ------------------------------------------------------------
+** _cbfNormalizeAttr — normalisasi value atribut CBF jadi 1 token
+** "tidak-pedas" → "tidakpedas", "Pedas Sedang" → "pedassedang"
+** Dipakai untuk membandingkan langsung dengan query yang
+** sudah di-fusi oleh _cbfTokenize.
+** ------------------------------------------------------------ */
+function _cbfNormalizeAttr($value) {
+    $value = strtolower(trim($value));
+    $value = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $value);
+    $value = preg_replace('/[^a-z0-9]/', '', $value); // gabung semua jadi 1 token
+    return $value;
+}
+
+/* ============================================================
+** searchByAttribute($query, $limit)
+** Pencarian LANGSUNG ke kolom atribut CBF
+** (cbf_kepedasan, cbf_rasa, cbf_kategori, cbf_bahan).
+** Ini yang membuat query "tidak pedas" bisa langsung
+** menemukan produk dengan cbf_kepedasan = "tidak-pedas",
+** bukan cuma mengandalkan TF-IDF similarity terhadap Name.
+** ============================================================ */
+function searchByAttribute($query, $limit = 12) {
+    global $con;
+    if (empty(trim($query))) return [];
+
+    // Tokenize query dengan fusi negasi yang sama seperti CBF
+    $rawQuery   = strtolower(trim($query));
+    $rawQuery   = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $rawQuery);
+    $queryToken = preg_replace('/[^a-z0-9]/', '', $rawQuery); // query jadi 1 token utuh, cth "tidakpedas"
+
+    $allItems = _cbfFetchItems();
+    if (empty($allItems)) return [];
+
+    $matchedIds = [];
+    foreach ($allItems as $item) {
+        $attrFields = [
+            $item['cbf_kepedasan'] ?? '',
+            $item['cbf_rasa']      ?? '',
+            $item['cbf_kategori']  ?? '',
+            $item['cbf_bahan']     ?? '',
+        ];
+        foreach ($attrFields as $attr) {
+            if (empty($attr)) continue;
+            $normAttr = _cbfNormalizeAttr($attr);
+            // Exact match ATAU salah satu kandungan substring penuh
+            if ($normAttr === $queryToken
+                || strpos($normAttr, $queryToken) !== false
+                || strpos($queryToken, $normAttr) !== false) {
+                $matchedIds[] = $item['Item_ID'];
+                break;
+            }
+        }
+    }
+
+    if (empty($matchedIds)) return [];
+
+    $ph = implode(',', array_fill(0, count($matchedIds), '?'));
+    try {
+        $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Item_ID IN ($ph) AND i.Approve=1 ORDER BY i.Item_ID DESC LIMIT $limit");
+        $s->execute($matchedIds);
+        return $s->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        return [];
+    }
 }
 
 function _cbfBuildTFIDF($documents) {
@@ -109,7 +198,10 @@ function _cbfBuildTFIDF($documents) {
         }
     }
 
-    $allWords  = array_unique(array_merge(...array_map('array_keys', $tf)));
+    // FIX PHP 8.1+: array_values() dulu sebelum di-spread (...), karena
+    // $tf punya key string (mis. "__QUERY__") yang akan dianggap named
+    // argument oleh array_merge() jika di-spread langsung -> ArgumentCountError.
+    $allWords  = array_unique(array_merge(...array_values(array_map('array_keys', $tf))));
     $totalDocs = count($documents);
     $idf       = [];
     foreach ($allWords as $word) {

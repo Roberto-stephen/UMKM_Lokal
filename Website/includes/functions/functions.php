@@ -1,251 +1,484 @@
 <?php
 
-	/*
-	** Get All Function v2.0 - FIXED (parameter order diperbaiki)
-	** $orderfield dipindah sebelum parameter opsional
-	*/
-	function getAllFrom($field, $table, $where = NULL, $and = NULL, $orderfield = 'ID', $ordering = "DESC") {
+/*
+** ============================================================
+** functions.php — MakanLokal UMKM
+** ============================================================
+*/
 
-		global $con;
+function getAllFrom($field, $table, $where = NULL, $and = NULL, $orderfield = 'ID', $ordering = "DESC") {
+    global $con;
+    $getAll = $con->prepare("SELECT $field FROM $table $where $and ORDER BY $orderfield $ordering");
+    $getAll->execute();
+    return $getAll->fetchAll();
+}
 
-		$getAll = $con->prepare("SELECT $field FROM $table $where $and ORDER BY $orderfield $ordering");
+function checkUserStatus($user) {
+    global $con;
+    $stmt = $con->prepare("SELECT Username, RegStatus FROM users WHERE Username = ? AND RegStatus = 0");
+    $stmt->execute([$user]);
+    return $stmt->rowCount();
+}
 
-		$getAll->execute();
+function checkItem($select, $from, $value) {
+    global $con;
+    $stmt = $con->prepare("SELECT $select FROM $from WHERE $select = ?");
+    $stmt->execute([$value]);
+    return $stmt->rowCount();
+}
 
-		$all = $getAll->fetchAll();
+function getRoleName($groupID) {
+    switch ((int)$groupID) {
+        case 1:  return 'Admin';
+        case 2:  return 'Penjual';
+        default: return 'Pembeli';
+    }
+}
 
-		return $all;
+function isAdminAuth() {
+    if (!isset($_SESSION['user']) || (isset($_SESSION['GroupID']) && $_SESSION['GroupID'] != 1)) {
+        header('Location: ../index.php'); exit();
+    }
+}
 
-	}
+function isSellerAuth() {
+    if (!isset($_SESSION['user']) || (isset($_SESSION['GroupID']) && $_SESSION['GroupID'] != 2)) {
+        header('Location: index.php'); exit();
+    }
+}
 
-	/*
-	** Check If User Is Not Activated
-	*/
-	function checkUserStatus($user) {
+function getTitle() {
+    global $pageTitle;
+    echo isset($pageTitle) ? $pageTitle : 'MakanLokal';
+}
 
-		global $con;
+function redirectHome($theMsg, $url = null, $seconds = 3) {
+    $url  = $url ?? 'index.php';
+    $link = 'Homepage';
+    echo $theMsg;
+    echo "<div class='alert alert-info'>You Will Be Redirected to $link After $seconds Seconds.</div>";
+    header("refresh:$seconds;url=$url");
+    exit();
+}
 
-		$stmtx = $con->prepare("SELECT Username, RegStatus FROM users WHERE Username = ? AND RegStatus = 0");
+function countItems($item, $table) {
+    global $con;
+    $stmt = $con->prepare("SELECT COUNT($item) FROM $table");
+    $stmt->execute();
+    return $stmt->fetchColumn();
+}
 
-		$stmtx->execute(array($user));
+function getLatest($select, $table, $order, $limit = 5) {
+    global $con;
+    $stmt = $con->prepare("SELECT $select FROM $table ORDER BY $order DESC LIMIT $limit");
+    $stmt->execute();
+    return $stmt->fetchAll();
+}
 
-		return $stmtx->rowCount();
+/* ============================================================
+** CBF — Content-Based Filtering
+** ============================================================ */
 
-	}
+// ------------------------------------------------------------
+// Stopword bahasa Indonesia — kata umum yang harus diabaikan
+// saat tokenisasi karena bukan atribut produk yang bermakna.
+// Tanpa ini, kata seperti "sedang" (kata kerja bantu: "ketika
+// sedang dahaga") bisa salah match dengan atribut kepedasan
+// "sedang" (medium spicy) yang artinya berbeda sama sekali.
+// ------------------------------------------------------------
+function _cbfStopwords() {
+    return [
+        'yang','untuk','dengan','dan','atau','di','ke','dari','pada','ini','itu',
+        'akan','adalah','dapat','bisa','juga','saja','saat','ketika','sedang',
+        'sudah','telah','masih','agar','supaya','karena','sebab','jika','kalau',
+        'tetapi','namun','serta','para','sang','si','nya','mu','ku','tak','tidak',
+        'bukan','belum','pernah','sangat','sekali','lebih','paling','cukup',
+        'banyak','sedikit','semua','setiap','beberapa','suatu','sebuah','satu',
+        'dua','tiga','kita','kami','anda','saya','mereka','dia','ia',
+        'cocok','enak','lezat','nikmat','khas','spesial','favorit','populer',
+    ];
+}
 
-	/*
-	** Check Items Function v1.0
-	*/
-	function checkItem($select, $from, $value) {
+function _cbfTokenize($text) {
+    $text = strtolower(trim($text));
 
-		global $con;
+    // ------------------------------------------------------------
+    // FIX: Fusikan frasa negasi "tidak-X" / "tidak X" jadi 1 token
+    // "tidakX". Tanpa ini, "tidak-pedas" akan ter-split jadi
+    // ["tidak","pedas"] sehingga search "pedas" salah match dengan
+    // item yang justru TIDAK pedas (karena hyphen jadi spasi).
+    // ------------------------------------------------------------
+    $text = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $text);
 
-		$statement = $con->prepare("SELECT $select FROM $from WHERE $select = ?");
+    $text = preg_replace('/[^a-z0-9\s]/', ' ', $text);
 
-		$statement->execute(array($value));
+    $stopwords = array_flip(_cbfStopwords());
 
-		return $statement->rowCount();
+    return array_filter(
+        preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY),
+        fn($w) => strlen($w) > 1 && !isset($stopwords[$w])
+    );
+}
 
-	}
+/* ------------------------------------------------------------
+** _cbfNormalizeAttr — normalisasi value atribut CBF jadi 1 token
+** "tidak-pedas" → "tidakpedas", "Pedas Sedang" → "pedassedang"
+** Dipakai untuk membandingkan langsung dengan query yang
+** sudah di-fusi oleh _cbfTokenize.
+** ------------------------------------------------------------ */
+function _cbfNormalizeAttr($value) {
+    $value = strtolower(trim($value));
+    $value = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $value);
+    $value = preg_replace('/[^a-z0-9]/', '', $value); // gabung semua jadi 1 token
+    return $value;
+}
 
-	/*
-	** Get Role Name
-	** Mengembalikan nama role berdasarkan GroupID
-	** 0 = Pembeli, 1 = Admin, 2 = Penjual
-	*/
-	function getRoleName($groupID) {
-		switch ((int)$groupID) {
-			case 1:  return 'Admin';
-			case 2:  return 'Penjual';
-			default: return 'Pembeli';
-		}
-	}
+/* ============================================================
+** searchByAttribute($query, $limit)
+** Pencarian LANGSUNG ke kolom atribut CBF
+** (cbf_kepedasan, cbf_rasa, cbf_kategori, cbf_bahan).
+** Ini yang membuat query "tidak pedas" bisa langsung
+** menemukan produk dengan cbf_kepedasan = "tidak-pedas",
+** bukan cuma mengandalkan TF-IDF similarity terhadap Name.
+** ============================================================ */
+function searchByAttribute($query, $limit = 12) {
+    global $con;
+    if (empty(trim($query))) return [];
 
-	/*
-	** Check Seller Auth
-	** Cek apakah user yang login adalah Penjual (GroupID = 2)
-	*/
-	function isSellerAuth() {
-		if (!isset($_SESSION['Username']) || $_SESSION['GroupID'] != 2) {
-			header('Location: index.php');
-			exit();
-		}
-	}
+    // Tokenize query dengan fusi negasi yang sama seperti CBF
+    $rawQuery   = strtolower(trim($query));
+    $rawQuery   = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $rawQuery);
+    $queryToken = preg_replace('/[^a-z0-9]/', '', $rawQuery); // query jadi 1 token utuh, cth "tidakpedas"
 
-	/*
-	** Check Admin Auth
-	** Cek apakah user yang login adalah Admin (GroupID = 1)
-	*/
-	function isAdminAuth() {
-		if (!isset($_SESSION['Username']) || $_SESSION['GroupID'] != 1) {
-			header('Location: index.php');
-			exit();
-		}
-	}
+    $allItems = _cbfFetchItems();
+    if (empty($allItems)) return [];
 
-	/*
-	** Title Function v1.0
-	*/
-	function getTitle() {
+    $matchedIds = [];
+    foreach ($allItems as $item) {
+        $attrFields = [
+            $item['cbf_kepedasan'] ?? '',
+            $item['cbf_rasa']      ?? '',
+            $item['cbf_kategori']  ?? '',
+            $item['cbf_bahan']     ?? '',
+        ];
+        foreach ($attrFields as $attr) {
+            if (empty($attr)) continue;
+            $normAttr = _cbfNormalizeAttr($attr);
+            // Exact match ATAU salah satu kandungan substring penuh
+            if ($normAttr === $queryToken
+                || strpos($normAttr, $queryToken) !== false
+                || strpos($queryToken, $normAttr) !== false) {
+                $matchedIds[] = $item['Item_ID'];
+                break;
+            }
+        }
+    }
 
-		global $pageTitle;
+    if (empty($matchedIds)) return [];
 
-		if (isset($pageTitle)) {
-			echo $pageTitle;
-		} else {
-			echo 'E-Commerce UMKM';
-		}
-	}
+    $ph = implode(',', array_fill(0, count($matchedIds), '?'));
+    try {
+        $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Item_ID IN ($ph) AND i.Approve=1 ORDER BY i.Item_ID DESC LIMIT $limit");
+        $s->execute($matchedIds);
+        return $s->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        return [];
+    }
+}
 
-	/*
-	** Home Redirect Function v2.0
-	*/
-	function redirectHome($theMsg, $url = null, $seconds = 3) {
+function _cbfBuildTFIDF($documents) {
+    $tf = [];
+    foreach ($documents as $id => $doc) {
+        $words = array_values(_cbfTokenize($doc));
+        $total = count($words);
+        if ($total === 0) { $tf[$id] = []; continue; }
+        $freq = array_count_values($words);
+        foreach ($freq as $word => $count) {
+            $tf[$id][$word] = $count / $total;
+        }
+    }
 
-		if ($url === null) {
-			$url  = 'index.php';
-			$link = 'Homepage';
-		} else {
-			if (isset($_SERVER['HTTP_REFERER']) && $_SERVER['HTTP_REFERER'] !== '') {
-				$url  = $_SERVER['HTTP_REFERER'];
-				$link = 'Previous Page';
-			} else {
-				$url  = 'index.php';
-				$link = 'Homepage';
-			}
-		}
+    // FIX PHP 8.1+: array_values() dulu sebelum di-spread (...), karena
+    // $tf punya key string (mis. "__QUERY__") yang akan dianggap named
+    // argument oleh array_merge() jika di-spread langsung -> ArgumentCountError.
+    $allWords  = array_unique(array_merge(...array_values(array_map('array_keys', $tf))));
+    $totalDocs = count($documents);
+    $idf       = [];
+    foreach ($allWords as $word) {
+        $n = count(array_filter($tf, fn($d) => isset($d[$word])));
+        $idf[$word] = log(($totalDocs + 1) / ($n + 1)) + 1;
+    }
 
-		echo $theMsg;
-		echo "<div class='alert alert-info'>You Will Be Redirected to $link After $seconds Seconds.</div>";
-		header("refresh:$seconds;url=$url");
-		exit();
+    $tfidf = [];
+    foreach ($tf as $id => $docTf) {
+        foreach ($docTf as $word => $tfVal) {
+            $tfidf[$id][$word] = $tfVal * ($idf[$word] ?? 1);
+        }
+    }
+    return $tfidf;
+}
 
-	}
+function _cbfCosineSim($vecA, $vecB) {
+    $dot = $magA = $magB = 0;
+    foreach ($vecA as $word => $val) {
+        if (isset($vecB[$word])) $dot += $val * $vecB[$word];
+        $magA += $val * $val;
+    }
+    foreach ($vecB as $val) $magB += $val * $val;
+    $magA = sqrt($magA); $magB = sqrt($magB);
+    return ($magA * $magB > 0) ? $dot / ($magA * $magB) : 0;
+}
 
-	/*
-	** Count Number Of Items Function v1.0
-	*/
-	function countItems($item, $table) {
+/* ------------------------------------------------------------
+** _cbfFetchItems — ambil semua item dengan kolom CBF + kategori
+** ------------------------------------------------------------ */
+function _cbfFetchItems() {
+    global $con;
+    try {
+        $stmt = $con->prepare("
+            SELECT i.*, c.Name AS category_name,
+                   COALESCE(i.cbf_kategori,'')  AS cbf_kategori,
+                   COALESCE(i.cbf_rasa,'')      AS cbf_rasa,
+                   COALESCE(i.cbf_bahan,'')     AS cbf_bahan,
+                   COALESCE(i.cbf_kepedasan,'') AS cbf_kepedasan
+            FROM   items i
+            LEFT   JOIN categories c ON c.ID = i.Cat_ID
+            WHERE  i.Approve = 1
+        ");
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        try {
+            $stmt = $con->prepare("SELECT *, '' AS category_name, '' AS cbf_kategori, '' AS cbf_rasa, '' AS cbf_bahan, '' AS cbf_kepedasan FROM items WHERE Approve = 1");
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e2) { return []; }
+    }
+}
 
-		global $con;
+/* _cbfBuildDoc — buat string dokumen dari satu item */
+function _cbfBuildDoc($item) {
+    $cbfData = trim(implode(' ', [
+        $item['cbf_kategori'] ?? '',
+        $item['cbf_rasa']     ?? '',
+        $item['cbf_bahan']    ?? '',
+        $item['cbf_kepedasan']?? '',
+    ]));
 
-		$stmt2 = $con->prepare("SELECT COUNT($item) FROM $table");
+    // Kalau cbf fields kosong, pakai nama + kategori + deskripsi sebagai fallback
+    if (empty($cbfData)) {
+        return implode(' ', [
+            str_repeat(($item['Name']          ?? '') . ' ', 3),  // bobot nama 3x
+            str_repeat(($item['category_name'] ?? '') . ' ', 2),  // bobot kategori 2x
+            $item['Description'] ?? '',
+        ]);
+    }
 
-		$stmt2->execute();
+    // Kalau ada cbf data: nama + cbf fields + deskripsi
+    return implode(' ', [
+        str_repeat(($item['Name'] ?? '') . ' ', 2),
+        $cbfData,
+        $item['Description'] ?? '',
+    ]);
+}
 
-		return $stmt2->fetchColumn();
+/* ============================================================
+** getRecommendations($currentItemId)
+** Rekomendasi di halaman detail produk (items.php)
+** 4-phase fallback agar selalu ada hasil
+** ============================================================ */
+function getRecommendations($currentItemId, $limit = 4) {
+    global $con;
+    $allItems = _cbfFetchItems();
+    if (empty($allItems)) return [];
 
-	}
+    // --- Phase 1: TF-IDF CBF ---
+    $documents = [];
+    foreach ($allItems as $item) {
+        $documents[$item['Item_ID']] = _cbfBuildDoc($item);
+    }
 
-	/*
-	** Get Latest Records Function v1.0
-	*/
-	function getLatest($select, $table, $order, $limit = 5) {
+    $tfidf = _cbfBuildTFIDF($documents);
+    $scores = [];
+    if (isset($tfidf[$currentItemId])) {
+        foreach ($tfidf as $id => $vec) {
+            if ($id == $currentItemId) continue;
+            $sim = _cbfCosineSim($tfidf[$currentItemId], $vec);
+            if ($sim > 0.05) $scores[$id] = $sim; // threshold kecil
+        }
+    }
 
-		global $con;
+    if (!empty($scores)) {
+        arsort($scores);
+        $topIds = array_slice(array_keys($scores), 0, $limit);
+        $ph     = implode(',', array_fill(0, count($topIds), '?'));
+        try {
+            $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Item_ID IN ($ph) AND i.Approve=1");
+            $s->execute($topIds);
+            $res = $s->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($res)) return $res;
+        } catch (Exception $e) {}
+    }
 
-		$getStmt = $con->prepare("SELECT $select FROM $table ORDER BY $order DESC LIMIT $limit");
+    // --- Phase 2: Same category ---
+    $currentCatId = null;
+    foreach ($allItems as $item) {
+        if ($item['Item_ID'] == $currentItemId) { $currentCatId = $item['Cat_ID']; break; }
+    }
+    if ($currentCatId) {
+        try {
+            $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Cat_ID=? AND i.Item_ID!=? AND i.Approve=1 ORDER BY RAND() LIMIT $limit");
+            $s->execute([$currentCatId, $currentItemId]);
+            $res = $s->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($res)) return $res;
+        } catch (Exception $e) {}
+    }
 
-		$getStmt->execute();
+    // --- Phase 3: Latest items ---
+    try {
+        $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Item_ID!=? AND i.Approve=1 ORDER BY i.Item_ID DESC LIMIT $limit");
+        $s->execute([$currentItemId]);
+        return $s->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) { return []; }
+}
 
-		return $getStmt->fetchAll();
+/* ============================================================
+** getRecommendationsByKeyword($keyword)
+** Rekomendasi berdasar keyword pencarian
+** Dipakai di search.php dan index.php (beranda)
+** 4-phase fallback — SELALU return hasil jika DB tidak kosong
+** ============================================================ */
+function getRecommendationsByKeyword($keyword, $limit = 8, $excludeIds = []) {
+    global $con;
+    if (empty(trim($keyword))) return [];
 
-	}
+    $allItems = _cbfFetchItems();
+    if (empty($allItems)) return [];
 
-	/*
-	** CBF: TF-IDF + Cosine Similarity
-	** Menghitung rekomendasi produk berdasarkan kemiripan atribut
-	** $currentItemId = ID produk yang sedang dilihat
-	** $limit         = jumlah rekomendasi yang ditampilkan
-	*/
-	function getRecommendations($currentItemId, $limit = 4) {
+    $results    = [];
+    $usedIds    = $excludeIds;
 
-		global $con;
+    /* ---- Phase 1: TF-IDF CBF ---- */
+    $documents  = [];
+    foreach ($allItems as $item) {
+        $documents[$item['Item_ID']] = _cbfBuildDoc($item);
+    }
+    $queryId             = '__QUERY__';
+    $documents[$queryId] = $keyword;
 
-		// Ambil semua produk yang sudah diapprove
-		$stmt = $con->prepare("SELECT Item_ID, Name, cbf_kategori, cbf_rasa, cbf_bahan, cbf_kepedasan FROM items WHERE Approve = 1");
-		$stmt->execute();
-		$allItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $tfidf = _cbfBuildTFIDF($documents);
 
-		if (empty($allItems)) return [];
+    if (isset($tfidf[$queryId])) {
+        $queryVec = $tfidf[$queryId];
+        $scores   = [];
+        foreach ($tfidf as $id => $vec) {
+            if ($id === $queryId || in_array($id, $usedIds)) continue;
+            $sim = _cbfCosineSim($queryVec, $vec);
+            if ($sim > 0) $scores[$id] = $sim;
+        }
+        if (!empty($scores)) {
+            arsort($scores);
+            $topIds = array_slice(array_keys($scores), 0, $limit);
+            $ph = implode(',', array_fill(0, count($topIds), '?'));
+            try {
+                $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Item_ID IN ($ph) AND i.Approve=1");
+                $s->execute($topIds);
+                $results = $s->fetchAll(PDO::FETCH_ASSOC);
+                $usedIds = array_merge($usedIds, array_column($results, 'Item_ID'));
+            } catch (Exception $e) {}
+        }
+    }
 
-		// Gabungkan atribut CBF menjadi satu string dokumen per produk
-		$documents = [];
-		foreach ($allItems as $item) {
-			$text = implode(' ', [
-				$item['cbf_kategori'],
-				$item['cbf_rasa'],
-				$item['cbf_bahan'],
-				$item['cbf_kepedasan'],
-			]);
-			$documents[$item['Item_ID']] = strtolower(trim($text));
-		}
+    if (count($results) >= $limit) return array_slice($results, 0, $limit);
 
-		// Hitung TF untuk setiap dokumen
-		$tf = [];
-		foreach ($documents as $id => $doc) {
-			$words = preg_split('/\s+/', $doc, -1, PREG_SPLIT_NO_EMPTY);
-			$total = count($words);
-			if ($total === 0) { $tf[$id] = []; continue; }
-			$freq = array_count_values($words);
-			foreach ($freq as $word => $count) {
-				$tf[$id][$word] = $count / $total;
-			}
-		}
+    /* ---- Phase 2: Token LIKE per kata ---- */
+    $tokens = array_values(_cbfTokenize($keyword));
+    if (!empty($tokens)) {
+        $likeClauses = array_map(fn($t) => 'i.Name LIKE ?', $tokens);
+        $params      = array_map(fn($t) => "%$t%", $tokens);
+        if (!empty($usedIds)) {
+            $ph = implode(',', array_fill(0, count($usedIds), '?'));
+            $excludeSql = "AND i.Item_ID NOT IN ($ph)";
+            $params = array_merge($params, $usedIds);
+        } else {
+            $excludeSql = '';
+        }
+        $need = $limit - count($results);
+        try {
+            $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Approve=1 AND (" . implode(' OR ', $likeClauses) . ") $excludeSql ORDER BY i.Item_ID DESC LIMIT $need");
+            $s->execute($params);
+            $more    = $s->fetchAll(PDO::FETCH_ASSOC);
+            $results = array_merge($results, $more);
+            $usedIds = array_merge($usedIds, array_column($more, 'Item_ID'));
+        } catch (Exception $e) {}
+    }
 
-		// Hitung IDF
-		$allWords  = array_unique(array_merge(...array_map('array_keys', $tf)));
-		$totalDocs = count($documents);
-		$idf = [];
-		foreach ($allWords as $word) {
-			$docsWithWord = 0;
-			foreach ($tf as $docTf) {
-				if (isset($docTf[$word])) $docsWithWord++;
-			}
-			$idf[$word] = log($totalDocs / ($docsWithWord + 1)) + 1;
-		}
+    if (count($results) >= $limit) return array_slice($results, 0, $limit);
 
-		// Hitung TF-IDF vector per dokumen
-		$tfidf = [];
-		foreach ($tf as $id => $docTf) {
-			foreach ($docTf as $word => $tfVal) {
-				$tfidf[$id][$word] = $tfVal * $idf[$word];
-			}
-		}
+    /* ---- Phase 3: Same category sebagai keyword hits ---- */
+    $catIds = [];
+    foreach ($allItems as $item) {
+        foreach (_cbfTokenize($keyword) as $tok) {
+            if (stripos($item['Name'], $tok) !== false && !empty($item['Cat_ID'])) {
+                $catIds[] = $item['Cat_ID'];
+            }
+        }
+    }
+    $catIds = array_unique($catIds);
 
-		// Cosine Similarity antara produk saat ini dan semua produk lain
-		if (!isset($tfidf[$currentItemId])) return [];
+    if (!empty($catIds)) {
+        $need = $limit - count($results);
+        $phCat = implode(',', array_fill(0, count($catIds), '?'));
+        $params = $catIds;
+        if (!empty($usedIds)) {
+            $phEx = implode(',', array_fill(0, count($usedIds), '?'));
+            $excludeSql = "AND i.Item_ID NOT IN ($phEx)";
+            $params = array_merge($params, $usedIds);
+        } else { $excludeSql = ''; }
+        try {
+            $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Cat_ID IN ($phCat) AND i.Approve=1 $excludeSql ORDER BY RAND() LIMIT $need");
+            $s->execute($params);
+            $more    = $s->fetchAll(PDO::FETCH_ASSOC);
+            $results = array_merge($results, $more);
+            $usedIds = array_merge($usedIds, array_column($more, 'Item_ID'));
+        } catch (Exception $e) {}
+    }
 
-		$currentVec = $tfidf[$currentItemId];
-		$scores     = [];
+    if (count($results) >= $limit) return array_slice($results, 0, $limit);
 
-		foreach ($tfidf as $id => $vec) {
-			if ($id == $currentItemId) continue;
+    /* ---- Phase 4: Latest items (last resort) ---- */
+    $need = $limit - count($results);
+    if (!empty($usedIds)) {
+        $phEx = implode(',', array_fill(0, count($usedIds), '?'));
+        $excludeSql = "AND i.Item_ID NOT IN ($phEx)";
+        $params = $usedIds;
+    } else { $excludeSql = ''; $params = []; }
+    try {
+        $s = $con->prepare("SELECT i.*, c.Name AS category_name FROM items i LEFT JOIN categories c ON c.ID=i.Cat_ID WHERE i.Approve=1 $excludeSql ORDER BY i.Item_ID DESC LIMIT $need");
+        $s->execute($params);
+        $more    = $s->fetchAll(PDO::FETCH_ASSOC);
+        $results = array_merge($results, $more);
+    } catch (Exception $e) {}
 
-			// Dot product
-			$dot = 0;
-			foreach ($currentVec as $word => $val) {
-				if (isset($vec[$word])) $dot += $val * $vec[$word];
-			}
+    return array_slice($results, 0, $limit);
+}
 
-			// Magnitude
-			$magA = sqrt(array_sum(array_map(fn($v) => $v * $v, $currentVec)));
-			$magB = sqrt(array_sum(array_map(fn($v) => $v * $v, $vec)));
+/* ------------------------------------------------------------
+** saveLastSearch / getLastSearch
+** ------------------------------------------------------------ */
+function saveLastSearch($keyword) {
+    if (!empty(trim($keyword))) {
+        $_SESSION['last_search']      = trim($keyword);
+        $_SESSION['last_search_time'] = time();
+    }
+}
 
-			$scores[$id] = ($magA * $magB > 0) ? $dot / ($magA * $magB) : 0;
-		}
-
-		// Urutkan dari similarity tertinggi
-		arsort($scores);
-		$topIds = array_slice(array_keys($scores), 0, $limit);
-
-		if (empty($topIds)) return [];
-
-		// Ambil data produk hasil rekomendasi
-		$placeholders = implode(',', array_fill(0, count($topIds), '?'));
-		$stmtRec = $con->prepare("SELECT * FROM items WHERE Item_ID IN ($placeholders) AND Approve = 1");
-		$stmtRec->execute($topIds);
-
-		return $stmtRec->fetchAll(PDO::FETCH_ASSOC);
-
-	}
+function getLastSearch() {
+    if (isset($_SESSION['last_search'], $_SESSION['last_search_time'])) {
+        if ((time() - $_SESSION['last_search_time']) < 1800) {
+            return $_SESSION['last_search'];
+        }
+        unset($_SESSION['last_search'], $_SESSION['last_search_time']);
+    }
+    return null;
+}
