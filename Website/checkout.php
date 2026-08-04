@@ -9,21 +9,37 @@ $cart  = $_SESSION['cart'];
 $total = array_sum(array_map(fn($i) => $i['price'] * $i['qty'], $cart));
 $errors = [];
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $alamat       = trim($_POST['alamat']);
-    $catatan      = trim($_POST['catatan']);
-    $metode_bayar = trim($_POST['metode_bayar']);
+// Semua pesanan = ambil sendiri (self-pickup). Tidak ada input alamat.
+// Pembeli hanya memilih WAKTU PENGAMBILAN.
+$pickupOptions = [
+    'Secepatnya (ASAP)',
+    'Siang (11:00-14:00)',
+    'Sore (15:00-18:00)',
+    'Malam (18:00-21:00)',
+];
 
-    if (empty($alamat))       $errors[] = 'Alamat pengiriman wajib diisi.';
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $waktu_ambil  = trim($_POST['waktu_ambil'] ?? '');
+    $catatan      = trim($_POST['catatan'] ?? '');
+    $metode_bayar = trim($_POST['metode_bayar'] ?? '');
+
+    if (!in_array($waktu_ambil, $pickupOptions, true)) $errors[] = 'Waktu pengambilan wajib dipilih.';
     if (empty($metode_bayar)) $errors[] = 'Metode pembayaran wajib dipilih.';
 
-    // Validasi stok
+    // Disimpan ke kolom 'alamat' yang sudah ada (nullable) sebagai info pickup.
+    $alamat = 'Ambil Sendiri - ' . $waktu_ambil;
+
+    // Validasi stok + BLOKIR produk milik sendiri
     foreach ($cart as $ci) {
-        $stmtStok = $con->prepare("SELECT stok, Name FROM items WHERE Item_ID=?");
+        $stmtStok = $con->prepare("SELECT stok, Name, Member_ID FROM items WHERE Item_ID=?");
         $stmtStok->execute([$ci['item_id']]);
         $produk = $stmtStok->fetch();
         if ($produk && $produk['stok'] < $ci['qty']) {
             $errors[] = "Stok '{$produk['Name']}' tidak cukup. Tersisa: {$produk['stok']} pcs.";
+        }
+        // Penjual tidak boleh membeli produknya sendiri
+        if ($produk && (int)$produk['Member_ID'] === (int)($_SESSION['uid'] ?? 0)) {
+            $errors[] = "Kamu tidak bisa membeli produkmu sendiri: '{$produk['Name']}'. Silakan hapus dari keranjang.";
         }
     }
 
@@ -80,16 +96,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;">
       <h3 style="font-size:18px;color:#1B2E5E;margin:0 0 20px;">Detail Pesanan</h3>
 
+      <!-- INFO PICKUP -->
+      <div style="background:#EAF5ED;border:1px solid #A3D4AE;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#1A5C2A;">
+        <i class="fa fa-shopping-bag" style="color:#1A5C2A;"></i>
+        <strong>Ambil Sendiri (Self-Pickup):</strong> Semua pesanan diambil langsung di tempat penjual. Tidak perlu isi alamat — cukup pilih waktu pengambilan.
+      </div>
+
       <!-- INFO COD -->
       <div style="background:#E8ECF5;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#1B2E5E;">
         <i class="fa fa-info-circle" style="color:#B5272A;"></i>
-        <strong>COD / Bayar di Tempat:</strong> Pesanan langsung diproses tanpa perlu upload bukti bayar. Pembayaran dilakukan saat barang tiba.
+        <strong>COD / Bayar di Tempat:</strong> Pesanan langsung diproses tanpa perlu upload bukti bayar. Pembayaran dilakukan saat pengambilan.
       </div>
 
       <form method="POST" enctype="multipart/form-data">
         <div class="form-group">
-          <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">ALAMAT PENGIRIMAN / AMBIL *</label>
-          <textarea class="form-control" name="alamat" rows="3" placeholder="Tulis alamat lengkap atau 'Ambil Sendiri' jika pickup" required style="resize:vertical;"><?php echo isset($_POST['alamat'])?htmlspecialchars($_POST['alamat']):'' ?></textarea>
+          <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">WAKTU PENGAMBILAN *</label>
+          <select class="form-control" name="waktu_ambil" required>
+            <option value="">-- Pilih Waktu Ambil --</option>
+            <?php foreach ($pickupOptions as $opt): ?>
+              <option value="<?php echo htmlspecialchars($opt) ?>" <?php echo (($_POST['waktu_ambil'] ?? '')===$opt)?'selected':'' ?>><?php echo htmlspecialchars($opt) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <small style="color:#9A9AB0;font-size:12px;">Barang diambil langsung di tempat penjual sesuai waktu yang dipilih.</small>
         </div>
 
         <div class="form-group">

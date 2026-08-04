@@ -4,26 +4,35 @@ $pageTitle = 'Detail Produk';
 include 'init.php';
 
 $itemid = isset($_GET['itemid']) && is_numeric($_GET['itemid']) ? intval($_GET['itemid']) : 0;
+$uid    = isset($_SESSION['uid']) ? (int)$_SESSION['uid'] : 0;
 
+// -------------------------------------------------------
 // Handle add to cart
-if (isset($_POST['add_to_cart']) && isset($_SESSION['user'])) {
+// -------------------------------------------------------
+if (isset($_POST['add_to_cart']) && $uid > 0) {
     $qty = max(1, intval($_POST['qty'] ?? 1));
-    // Cek stok
-    $stokChk = $con->prepare("SELECT stok FROM items WHERE Item_ID=? AND Approve=1");
+    // Ambil stok + pemilik produk sekaligus
+    $stokChk = $con->prepare("SELECT stok, Member_ID FROM items WHERE Item_ID=? AND Approve=1");
     $stokChk->execute([$itemid]);
     $stokData = $stokChk->fetch();
-    if ($stokData && $stokData['stok'] > 0) {
-        $qtyMax = min($qty, $stokData['stok']);
-        if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
-        if (isset($_SESSION['cart'][$itemid])) {
-            $_SESSION['cart'][$itemid]['qty'] = min($_SESSION['cart'][$itemid]['qty'] + $qtyMax, $stokData['stok']);
-        } else {
-            $s = $con->prepare("SELECT * FROM items WHERE Item_ID=? AND Approve=1");
-            $s->execute([$itemid]);
-            $p = $s->fetch();
-            if ($p) $_SESSION['cart'][$itemid] = ['item_id'=>$itemid,'name'=>$p['Name'],'price'=>$p['Price'],'picture'=>$p['picture'],'qty'=>$qtyMax];
+    if ($stokData) {
+        // BLOKIR: penjual tidak boleh membeli produknya sendiri
+        if ((int)$stokData['Member_ID'] === $uid) {
+            header('Location: items.php?itemid='.$itemid.'&err=own'); exit();
         }
-        header('Location: cart.php?added=1'); exit();
+        if ($stokData['stok'] > 0) {
+            $qtyMax = min($qty, $stokData['stok']);
+            if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
+            if (isset($_SESSION['cart'][$itemid])) {
+                $_SESSION['cart'][$itemid]['qty'] = min($_SESSION['cart'][$itemid]['qty'] + $qtyMax, $stokData['stok']);
+            } else {
+                $s = $con->prepare("SELECT * FROM items WHERE Item_ID=? AND Approve=1");
+                $s->execute([$itemid]);
+                $p = $s->fetch();
+                if ($p) $_SESSION['cart'][$itemid] = ['item_id'=>$itemid,'name'=>$p['Name'],'price'=>$p['Price'],'picture'=>$p['picture'],'qty'=>$qtyMax];
+            }
+            header('Location: cart.php?added=1'); exit();
+        }
     }
 }
 
@@ -37,12 +46,74 @@ if ($stmt->rowCount() > 0):
     $item = $stmt->fetch();
     $pageTitle = $item['Name'];
 
-    // Hitung rata-rata rating
-    $ratingStmt = $con->prepare("SELECT AVG(rating) as avg_rating, COUNT(*) as total FROM comments WHERE item_id=? AND status=1");
+    // -------------------------------------------------------
+    // Status user terhadap produk ini
+    // -------------------------------------------------------
+    $isOwner = $uid > 0 && (int)$item['Member_ID'] === $uid;
+
+    // -------------------------------------------------------
+    // KUOTA ULASAN = "satu ulasan per pembelian".
+    //   $purchaseCount = berapa kali user beli produk ini (order 'Selesai')
+    //   $reviewCount   = berapa ulasan yang sudah user tulis untuk produk ini
+    //   Boleh ulas jika: purchaseCount > reviewCount
+    //   -> Sudah ulas 1x & beli 1x  = tidak bisa lagi.
+    //   -> Beli lagi (order Selesai baru) = dapat jatah ulas lagi.
+    // Basis 'Selesai' saja (barang sudah diterima). Ubah di sini kalau perlu.
+    // -------------------------------------------------------
+    $purchaseCount = 0;
+    if ($uid > 0 && !$isOwner) {
+        $chk = $con->prepare("
+            SELECT COUNT(DISTINCT o.order_id) AS c
+            FROM   order_items oi
+            JOIN   orders o ON o.order_id = oi.order_id
+            WHERE  oi.item_id = ? AND o.user_id = ? AND o.status = 'Selesai'
+        ");
+        $chk->execute([$itemid, $uid]);
+        $purchaseCount = (int)($chk->fetch()['c'] ?? 0);
+    }
+
+    $reviewCount = 0;
+    if ($uid > 0) {
+        $rv = $con->prepare("SELECT COUNT(*) AS c FROM comments WHERE item_id=? AND user_id=?");
+        $rv->execute([$itemid, $uid]);
+        $reviewCount = (int)($rv->fetch()['c'] ?? 0);
+    }
+    $canReview = $purchaseCount > $reviewCount;
+
+    // -------------------------------------------------------
+    // Proses kirim ulasan — GATE di sisi server (tidak percaya form saja)
+    // -------------------------------------------------------
+    $reviewMsg = ''; $reviewMsgType = '';
+    if (isset($_POST['add_comment']) && $uid > 0) {
+        if ($isOwner) {
+            $reviewMsg = 'Kamu tidak bisa mengulas produk milik sendiri.'; $reviewMsgType = 'danger';
+        } elseif ($purchaseCount === 0) {
+            $reviewMsg = 'Hanya pembeli yang bisa memberi ulasan. Selesaikan pembelian produk ini dulu ya.'; $reviewMsgType = 'danger';
+        } elseif (!$canReview) {
+            $reviewMsg = 'Kamu sudah mengulas semua pembelianmu untuk produk ini. Beli lagi untuk memberi ulasan baru.'; $reviewMsgType = 'danger';
+        } else {
+            $comment = htmlspecialchars(strip_tags($_POST['comment'] ?? ''));
+            $rating  = max(1, min(5, intval($_POST['rating'] ?? 5)));
+            if ($comment !== '') {
+                $ins = $con->prepare("INSERT INTO comments(comment,rating,status,comment_date,item_id,user_id) VALUES(?,?,1,NOW(),?,?)");
+                $ins->execute([$comment, $rating, $item['Item_ID'], $uid]);
+                $reviewCount++;                       // pakai satu jatah
+                $canReview = $purchaseCount > $reviewCount;
+                $reviewMsg = 'Ulasan berhasil ditambahkan! Terima kasih.'; $reviewMsgType = 'success';
+            } else {
+                $reviewMsg = 'Ulasan tidak boleh kosong.'; $reviewMsgType = 'danger';
+            }
+        }
+    }
+
+    // -------------------------------------------------------
+    // Rata-rata rating (dihitung SETELAH kemungkinan insert di atas)
+    // -------------------------------------------------------
+    $ratingStmt = $con->prepare("SELECT AVG(rating) AS avg_rating, COUNT(*) AS total FROM comments WHERE item_id=? AND status=1");
     $ratingStmt->execute([$itemid]);
-    $ratingData = $ratingStmt->fetch();
-    $avgRating  = round($ratingData['avg_rating'] ?? 0, 1);
-    $totalUlasan = $ratingData['total'];
+    $ratingData  = $ratingStmt->fetch();
+    $avgRating   = round($ratingData['avg_rating'] ?? 0, 1);
+    $totalUlasan = (int)($ratingData['total'] ?? 0);
 ?>
 
 <div class="page-banner"><div class="container">
@@ -65,13 +136,27 @@ if ($stmt->rowCount() > 0):
   <div class="col-md-8 item-detail-info">
     <div class="item-price-big">Rp <?php echo number_format($item['Price'],0,',','.') ?></div>
 
-    <!-- RATING BINTANG -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-      <div style="color:#F4A261;font-size:16px;">
-        <?php for ($i=1;$i<=5;$i++) echo $i<=$avgRating ? '★' : '☆'; ?>
+    <!-- ============================================================
+         RATING BINTANG (tampilan) — selalu terlihat, nilai jelas.
+         Bintang penuh = oranye, kosong = abu-abu. Kalau belum ada
+         ulasan, tampilkan "Belum ada rating".
+         ============================================================ -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <div style="font-size:18px;letter-spacing:3px;line-height:1;">
+        <?php
+          $full = (int)round($avgRating);
+          for ($i = 1; $i <= 5; $i++) {
+              echo '<span style="color:' . ($i <= $full ? '#F4A261' : '#DDE1EC') . ';">&#9733;</span>';
+          }
+        ?>
       </div>
-      <span style="font-size:13px;color:#4A4A6A;"><?php echo $avgRating ?>/5 &nbsp;(<?php echo $totalUlasan ?> ulasan)</span>
-      <span style="font-size:12px;color:#9A9AB0;margin-left:8px;"><i class="fa fa-eye"></i> <?php echo number_format($item['view_count'],0,',','.') ?> dilihat</span>
+      <?php if ($totalUlasan > 0): ?>
+        <span style="font-size:14px;color:#1B2E5E;font-weight:700;"><?php echo number_format($avgRating,1) ?></span>
+        <span style="font-size:13px;color:#9A9AB0;">/ 5 &middot; <?php echo $totalUlasan ?> ulasan</span>
+      <?php else: ?>
+        <span style="font-size:13px;color:#9A9AB0;">Belum ada rating</span>
+      <?php endif; ?>
+      <span style="font-size:12px;color:#9A9AB0;margin-left:6px;"><i class="fa fa-eye"></i> <?php echo number_format($item['view_count'],0,',','.') ?> dilihat</span>
     </div>
 
     <p style="color:#57534E;font-size:15px;line-height:1.7;"><?php echo nl2br(htmlspecialchars($item['Description'])) ?></p>
@@ -106,9 +191,21 @@ if ($stmt->rowCount() > 0):
       <?php endif; ?>
     </ul>
 
-    <!-- ADD TO CART -->
-    <?php if (isset($_SESSION['user'])): ?>
-      <?php if ($item['stok'] > 0): ?>
+    <!-- ============================================================
+         ADD TO CART — penjual TIDAK bisa membeli produk sendiri
+         ============================================================ -->
+    <?php if (isset($_GET['err']) && $_GET['err'] === 'own'): ?>
+      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-info-circle"></i> Ini produk milikmu sendiri — kamu tidak bisa membelinya.</div>
+    <?php endif; ?>
+
+    <?php if (!isset($_SESSION['user'])): ?>
+      <div class="nice-message" style="margin-top:16px;"><a href="login.php" style="color:#1B2E5E;font-weight:700;">Login</a> untuk menambahkan ke keranjang.</div>
+    <?php elseif ($isOwner): ?>
+      <div class="alert" style="margin-top:16px;background:#E8ECF5;border:1px solid #C5CEE0;color:#1B2E5E;padding:14px 16px;border-radius:10px;">
+        <i class="fa fa-user-circle"></i> Ini <strong>produk milikmu</strong>. Penjual tidak bisa membeli produk sendiri.
+        <a href="myItems.php" style="color:#B5272A;font-weight:700;margin-left:6px;">Kelola produk &rarr;</a>
+      </div>
+    <?php elseif ($item['stok'] > 0): ?>
       <form method="POST" style="display:flex;align-items:center;gap:12px;margin-top:16px;">
         <input type="number" name="qty" value="1" min="1" max="<?php echo $item['stok'] ?>"
                style="width:70px;padding:10px;border:1.5px solid #DDE1EC;border-radius:8px;text-align:center;font-size:16px;font-weight:600;color:#1B2E5E;">
@@ -116,11 +213,8 @@ if ($stmt->rowCount() > 0):
           <i class="fa fa-shopping-basket"></i> Tambah ke Keranjang
         </button>
       </form>
-      <?php else: ?>
-      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-times-circle"></i> Stok habis, produk tidak tersedia saat ini.</div>
-      <?php endif; ?>
     <?php else: ?>
-    <div class="nice-message" style="margin-top:16px;"><a href="login.php" style="color:#1B2E5E;font-weight:700;">Login</a> untuk menambahkan ke keranjang.</div>
+      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-times-circle"></i> Stok habis, produk tidak tersedia saat ini.</div>
     <?php endif; ?>
   </div>
 </div>
@@ -157,51 +251,68 @@ if ($stmt->rowCount() > 0):
 
 <hr class="custom-hr">
 
-<!-- KOMENTAR + RATING -->
-<div class="comment-section">
+<!-- ============================================================
+     KOMENTAR + RATING — hanya pembeli yang bisa memberi ulasan
+     ============================================================ -->
+<div class="comment-section" id="ulasan">
   <h3><i class="fa fa-comments" style="color:#B5272A;"></i> Ulasan & Rating</h3>
 
-  <?php if (isset($_SESSION['user'])): ?>
-  <div class="comment-form" style="margin-bottom:28px;">
-    <form action="<?php echo $_SERVER['PHP_SELF'].'?itemid='.$item['Item_ID'] ?>" method="POST">
+  <?php if ($reviewMsg): ?>
+    <div class="alert alert-<?php echo $reviewMsgType ?>" style="margin-bottom:16px;">
+      <i class="fa fa-<?php echo $reviewMsgType === 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i> <?php echo $reviewMsg ?>
+    </div>
+  <?php endif; ?>
 
-      <!-- BINTANG RATING -->
-      <div style="margin-bottom:12px;">
-        <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">Rating Produk *</label>
-        <div class="star-rating" style="display:flex;gap:6px;flex-direction:row-reverse;justify-content:flex-end;">
-          <?php for ($i=5;$i>=1;$i--): ?>
-          <label style="cursor:pointer;font-size:28px;color:#DDE1EC;transition:color .15s;" for="star<?php echo $i ?>">★
-            <input type="radio" name="rating" id="star<?php echo $i ?>" value="<?php echo $i ?>" style="display:none;" <?php echo $i==5?'checked':'' ?>>
-          </label>
-          <?php endfor; ?>
-        </div>
-        <style>
-          .star-rating label:hover, .star-rating label:hover ~ label,
-          .star-rating input:checked ~ label { color: #F4A261; }
-          .star-rating { flex-direction: row-reverse; }
-          .star-rating label { color: #DDE1EC; }
-          .star-rating input[type="radio"]:checked + label,
-          .star-rating label:hover { color: #F4A261; }
-        </style>
-      </div>
+  <?php if (!isset($_SESSION['user'])): ?>
+    <div class="nice-message" style="margin-bottom:24px;"><a href="login.php" style="color:#1B2E5E;font-weight:700;">Login</a> untuk memberikan ulasan.</div>
 
-      <textarea class="comment-form textarea" name="comment" placeholder="Bagikan pengalamanmu tentang produk ini..." required style="width:100%;border:1.5px solid #DDE1EC;border-radius:10px;padding:12px 16px;font-size:14px;font-family:'DM Sans',sans-serif;resize:vertical;min-height:100px;background:#F0F2F5;"></textarea>
-      <button type="submit" name="add_comment" class="btn-primary-custom" style="margin-top:10px;">Kirim Ulasan</button>
-    </form>
+  <?php elseif ($isOwner): ?>
+    <div class="nice-message" style="margin-bottom:24px;"><i class="fa fa-user-circle"></i> Ini produk milikmu — kamu tidak bisa mengulas produk sendiri.</div>
 
-    <?php if (isset($_POST['add_comment'])) {
-        $comment = htmlspecialchars(strip_tags($_POST['comment']));
-        $rating  = intval($_POST['rating'] ?? 5);
-        $rating  = max(1, min(5, $rating));
-        if (!empty($comment)) {
-            $ins = $con->prepare("INSERT INTO comments(comment,rating,status,comment_date,item_id,user_id) VALUES(?,?,1,NOW(),?,?)");
-            $ins->execute([$comment, $rating, $item['Item_ID'], $_SESSION['uid']]);
-            echo '<div class="alert alert-success" style="margin-top:12px;"><i class="fa fa-check"></i> Ulasan berhasil ditambahkan!</div>';
-        }
-    } ?>
-  </div>
+  <?php elseif ($purchaseCount === 0): ?>
+    <div class="nice-message" style="margin-bottom:24px;">
+      <i class="fa fa-lock" style="color:#B5272A;"></i>
+      Hanya <strong>pembeli</strong> yang bisa memberi ulasan. Kamu belum pernah menyelesaikan pembelian produk ini.
+    </div>
+
+  <?php elseif (!$canReview): ?>
+    <div class="nice-message" style="margin-bottom:24px;"><i class="fa fa-check" style="color:#1A5C2A;"></i> Kamu sudah mengulas produk ini. <strong>Beli lagi</strong> untuk memberi ulasan baru. Terima kasih!</div>
+
   <?php else: ?>
-  <div class="nice-message" style="margin-bottom:24px;"><a href="login.php" style="color:#1B2E5E;font-weight:700;">Login</a> untuk memberikan ulasan.</div>
+    <!-- FORM ULASAN (hanya untuk pembeli yang masih punya jatah ulasan) -->
+    <div class="comment-form" style="margin-bottom:28px;">
+      <form action="items.php?itemid=<?php echo $item['Item_ID'] ?>" method="POST">
+
+        <!-- ============================================================
+             STAR PICKER (diperbaiki)
+             Sebelumnya <input> diletakkan DI DALAM <label>, sedangkan
+             CSS-nya pakai selector saudara (input:checked ~ label), jadi
+             bintang terpilih tidak pernah berwarna. Sekarang <input> dan
+             <label> jadi SAUDARA + urutan dibalik (row-reverse), sehingga
+             bintang yang dipilih (dan yang bernilai lebih kecil) menyala.
+             ============================================================ -->
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">Rating Produk *</label>
+          <div class="star-rating" role="radiogroup" aria-label="Pilih rating">
+            <?php for ($i = 5; $i >= 1; $i--): ?>
+              <input type="radio" name="rating" id="star<?php echo $i ?>" value="<?php echo $i ?>" <?php echo $i === 5 ? 'checked' : '' ?>>
+              <label for="star<?php echo $i ?>" title="<?php echo $i ?> bintang">&#9733;</label>
+            <?php endfor; ?>
+          </div>
+          <style>
+            .star-rating { display:inline-flex; flex-direction:row-reverse; gap:6px; }
+            .star-rating input { position:absolute; opacity:0; width:0; height:0; }
+            .star-rating label { font-size:30px; line-height:1; color:#DDE1EC; cursor:pointer; transition:color .15s; }
+            .star-rating label:hover,
+            .star-rating label:hover ~ label { color:#F4A261; }
+            .star-rating input:checked ~ label { color:#F4A261; }
+          </style>
+        </div>
+
+        <textarea name="comment" placeholder="Bagikan pengalamanmu tentang produk ini..." required style="width:100%;border:1.5px solid #DDE1EC;border-radius:10px;padding:12px 16px;font-size:14px;font-family:'DM Sans',sans-serif;resize:vertical;min-height:100px;background:#F0F2F5;"></textarea>
+        <button type="submit" name="add_comment" class="btn-primary-custom" style="margin-top:10px;">Kirim Ulasan</button>
+      </form>
+    </div>
   <?php endif; ?>
 
   <?php
@@ -222,8 +333,8 @@ if ($stmt->rowCount() > 0):
       <div class="comment-content" style="flex:1;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span class="comment-author"><?php echo htmlspecialchars($comment['Member']) ?></span>
-          <span style="color:#F4A261;font-size:14px;">
-            <?php for ($i=1;$i<=5;$i++) echo $i<=$comment['rating']?'★':'☆'; ?>
+          <span style="font-size:14px;letter-spacing:2px;">
+            <?php for ($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$comment['rating']?'#F4A261':'#DDE1EC').';">&#9733;</span>'; ?>
           </span>
           <span class="comment-date"><i class="fa fa-clock-o"></i> <?php echo $comment['comment_date'] ?></span>
         </div>

@@ -12,10 +12,14 @@ if (isset($_POST['add_to_cart'])) {
     $stmt    = $con->prepare("SELECT * FROM items WHERE Item_ID=? AND Approve=1");
     $stmt->execute([$item_id]);
     if ($stmt->rowCount() > 0) {
+        $p = $stmt->fetch();
+        // BLOKIR: penjual tidak boleh membeli produknya sendiri
+        if ((int)$p['Member_ID'] === (int)($_SESSION['uid'] ?? 0)) {
+            header('Location: items.php?itemid='.$item_id.'&err=own'); exit();
+        }
         if (isset($_SESSION['cart'][$item_id])) {
             $_SESSION['cart'][$item_id]['qty'] += $qty;
         } else {
-            $p = $stmt->fetch();
             $_SESSION['cart'][$item_id] = ['item_id'=>$item_id,'name'=>$p['Name'],'price'=>$p['Price'],'picture'=>$p['picture'],'qty'=>$qty];
         }
         header('Location: cart.php?added=1'); exit();

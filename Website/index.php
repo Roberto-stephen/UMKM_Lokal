@@ -17,6 +17,7 @@ $searchRecs = [];
 if ($lastSearch && function_exists('getRecommendationsByKeyword')) {
     $searchRecs = getRecommendationsByKeyword($lastSearch, 8);
 }
+if (!empty($searchRecs)) attachRatings($con, $searchRecs);
 
 // -------------------------------------------------------
 // SORT — ala ShopeeFood: Relevansi(Terbaru) / Termurah / Termahal / Rating
@@ -134,6 +135,7 @@ $sort = isset($_GET['sort']) && isset($sortOptions[$_GET['sort']]) ? $_GET['sort
               <div class="card-title">
                 <a href="items.php?itemid=<?= $rec['Item_ID'] ?>"><?= $nameHtml ?></a>
               </div>
+              <?= ratingBadge($rec) ?>
               <div class="card-desc"><?= htmlspecialchars(substr($rec['Description'],0,70)) ?>...</div>
               <div class="card-footer-row">
                 <span style="font-size:11px;color:<?= ($rec['stok']??0)>0?'#1A5C2A':'#9B1C1C' ?>;">
@@ -224,6 +226,17 @@ $sort = isset($_GET['sort']) && isset($sortOptions[$_GET['sort']]) ? $_GET['sort
     } catch (Exception $e) {
         $allItems = getAllFrom('*','items','WHERE Approve = 1','','Item_ID');
     }
+
+    // Tempel rating asli (dari comments) ke tiap produk
+    attachRatings($con, $allItems);
+    // Sort "Rating Tertinggi" pakai rating asli, bukan kolom items.Rating yang lama
+    if ($sort === 'rating') {
+        usort($allItems, function ($a, $b) {
+            if (($b['_avg_rating'] ?? 0) != ($a['_avg_rating'] ?? 0))
+                return ($b['_avg_rating'] ?? 0) <=> ($a['_avg_rating'] ?? 0);
+            return ($b['_review_count'] ?? 0) <=> ($a['_review_count'] ?? 0);
+        });
+    }
   ?>
 
   <?php if (!empty($allItems)): ?>
@@ -245,14 +258,11 @@ $sort = isset($_GET['sort']) && isset($sortOptions[$_GET['sort']]) ? $_GET['sort
           <div class="card-title">
             <a href="items.php?itemid=<?= $item['Item_ID'] ?>"><?= htmlspecialchars($item['Name']) ?></a>
           </div>
+          <?= ratingBadge($item) ?>
           <div class="card-desc"><?= htmlspecialchars(substr($item['Description'],0,80)) ?>...</div>
           <div class="card-footer-row">
             <span class="card-date">
-              <?php if ($sort === 'rating'): ?>
-                <i class="fa fa-star" style="color:#F4A261;"></i> <?= number_format($item['Rating']??0,1) ?>/5
-              <?php else: ?>
-                <i class="fa fa-calendar-o"></i> <?= $item['Add_Date'] ?>
-              <?php endif; ?>
+              <i class="fa fa-calendar-o"></i> <?= $item['Add_Date'] ?>
             </span>
             <a href="items.php?itemid=<?= $item['Item_ID'] ?>" class="btn-detail">Lihat &rarr;</a>
           </div>

@@ -153,23 +153,25 @@ function searchByAttribute($query, $limit = 12) {
     $allItems = _cbfFetchItems();
     if (empty($allItems)) return [];
 
-    $matchedIds = [];
-    foreach ($allItems as $item) {
-        $attrFields = [
-            $item['cbf_kepedasan'] ?? '',
-            $item['cbf_rasa']      ?? '',
-            $item['cbf_kategori']  ?? '',
-            $item['cbf_bahan']     ?? '',
-        ];
-        foreach ($attrFields as $attr) {
-            if (empty($attr)) continue;
-            $normAttr = _cbfNormalizeAttr($attr);
-            // Exact match ATAU salah satu kandungan substring penuh
-            if ($normAttr === $queryToken
-                || strpos($normAttr, $queryToken) !== false
-                || strpos($queryToken, $normAttr) !== false) {
+    // ------------------------------------------------------------
+    // FIX BUG: dulu pakai substring (strpos) sehingga query "pedas"
+    // salah match ke atribut "tidak-pedas" (karena "tidakpedas"
+    // MENGANDUNG potongan "pedas"). Sekarang pakai pencocokan
+    // TOKEN UTUH: "pedas" != "tidakpedas", jadi item yang justru
+    // tidak pedas tidak lagi muncul saat mencari "pedas".
+    // ------------------------------------------------------------
+    $queryTokens = _attrTokens($query);
+    $matchedIds  = [];
+    if (!empty($queryTokens)) {
+        foreach ($allItems as $item) {
+            $attrTokens = array_merge(
+                _attrTokens($item['cbf_kepedasan'] ?? ''),
+                _attrTokens($item['cbf_rasa']      ?? ''),
+                _attrTokens($item['cbf_kategori']  ?? ''),
+                _attrTokens($item['cbf_bahan']     ?? '')
+            );
+            if (!empty(array_intersect($queryTokens, $attrTokens))) {
                 $matchedIds[] = $item['Item_ID'];
-                break;
             }
         }
     }
@@ -186,9 +188,284 @@ function searchByAttribute($query, $limit = 12) {
     }
 }
 
+/* ============================================================
+** ==============  FACETED SEARCH (FILTER ATRIBUT)  ============
+** Blok fungsi di bawah ini menambahkan kemampuan:
+**   1. searchCandidates()   -> ambil semua produk relevan + skor
+**   2. getSearchFacets()     -> hitung opsi filter + jumlahnya
+**   3. filterItemsByFacets() -> saring hasil sesuai filter aktif
+** Semua exact-token, jadi "pedas" tidak nyangkut ke "tidak-pedas".
+** ============================================================ */
+
+/* ------------------------------------------------------------
+** _attrTokens — pecah value atribut jadi array token bersih.
+**   "tidak-pedas"  -> ["tidakpedas"]      (negasi disatukan dulu)
+**   "pedas gurih"  -> ["pedas","gurih"]
+**   "daging-sapi"  -> ["daging","sapi"]   (hyphen biasa dipisah)
+** Urutan penting: satukan negasi DULU, baru ubah hyphen jadi spasi,
+** supaya "tidak-pedas" tidak ikut terpecah jadi ["tidak","pedas"].
+** ------------------------------------------------------------ */
+function _attrTokens($value) {
+    $value = strtolower(trim((string)$value));
+    if ($value === '') return [];
+    // 1) satukan negasi: "tidak pedas" / "tidak-pedas" -> "tidakpedas"
+    $value = preg_replace('/\btidak[-\s]+([a-z0-9]+)/u', 'tidak$1', $value);
+    // 2) sisa hyphen -> spasi  ("daging-sapi" -> "daging sapi")
+    $value = str_replace('-', ' ', $value);
+    // 3) buang karakter selain huruf/angka/spasi
+    $value = preg_replace('/[^a-z0-9\s]/', ' ', $value);
+    $tokens = preg_split('/\s+/', $value, -1, PREG_SPLIT_NO_EMPTY);
+    return array_values(array_unique($tokens));
+}
+
+/* ------------------------------------------------------------
+** Label bawaan untuk value atribut agar tampil rapi di UI
+** ------------------------------------------------------------ */
+function _facetLabels() {
+    return [
+        'kepedasan' => [
+            'tidakpedas' => 'Tidak Pedas',
+            'sedang'     => 'Pedas Sedang',
+            'pedas'      => 'Pedas',
+        ],
+        'rasa' => [
+            'manis' => 'Manis', 'gurih' => 'Gurih', 'pedas' => 'Pedas',
+            'asam'  => 'Asam',  'pahit' => 'Pahit', 'asin'  => 'Asin',
+        ],
+    ];
+}
+
+/* ------------------------------------------------------------
+** _facetValuesForItem — nilai facet milik satu item, per grup.
+**   kepedasan -> dari cbf_kepedasan (1 token)
+**   rasa      -> dari cbf_rasa (bisa banyak token)
+**   kategori  -> dari Cat_ID (kategori asli di tabel categories)
+** ------------------------------------------------------------ */
+function _facetValuesForItem($item) {
+    return [
+        'kepedasan' => _attrTokens($item['cbf_kepedasan'] ?? ''),
+        'rasa'      => _attrTokens($item['cbf_rasa'] ?? ''),
+        'kategori'  => (isset($item['Cat_ID']) && $item['Cat_ID'] !== '')
+                        ? [(string)$item['Cat_ID']] : [],
+    ];
+}
+
+/* _itemMatchesFacet — apakah item punya salah satu value pada grup ini (OR) */
+function _itemMatchesFacet($item, $group, $vals) {
+    if (empty($vals)) return true;
+    $itemVals = _facetValuesForItem($item)[$group] ?? [];
+    return count(array_intersect($vals, $itemVals)) > 0;
+}
+
+/* ------------------------------------------------------------
+** searchCandidates($q) — kumpulkan SEMUA produk yang relevan
+** dengan keyword, lengkap dengan skor relevansi. Dipakai sebagai
+** "kolam" yang nanti disaring oleh filter facet.
+**   - nama cocok frasa penuh        : +100
+**   - token cocok di nama           : +12
+**   - token cocok di deskripsi      : +3
+**   - atribut cocok (exact token)   : +40  (mis. cari "pedas")
+** ------------------------------------------------------------ */
+function searchCandidates($q, $limit = 300) {
+    $q = trim($q);
+    if ($q === '') return [];
+
+    $items = _cbfFetchItems();
+    if (empty($items)) return [];
+
+    $ql = strtolower($q);
+    // token untuk pencocokan nama/deskripsi (substring biasa)
+    $rawTokens = array_values(array_filter(
+        preg_split('/\s+/', preg_replace('/[^a-z0-9\s]/', ' ', $ql), -1, PREG_SPLIT_NO_EMPTY),
+        fn($t) => strlen($t) > 1
+    ));
+    // token untuk pencocokan atribut (exact, negasi menyatu)
+    $qAttrTokens = _attrTokens($q);
+
+    $out = [];
+    foreach ($items as $it) {
+        $name  = strtolower($it['Name'] ?? '');
+        $desc  = strtolower($it['Description'] ?? '');
+        $score = 0;
+        $matchedAttr = '';
+
+        if ($ql !== '' && strpos($name, $ql) !== false) $score += 100;
+
+        foreach ($rawTokens as $t) {
+            if (strpos($name, $t) !== false)       $score += 12;
+            elseif (strpos($desc, $t) !== false)   $score += 3;
+        }
+
+        foreach (['cbf_kepedasan','cbf_rasa','cbf_kategori','cbf_bahan'] as $field) {
+            $toks = _attrTokens($it[$field] ?? '');
+            if (!empty(array_intersect($qAttrTokens, $toks))) {
+                $score += 40;
+                if ($matchedAttr === '' && !empty($it[$field])) $matchedAttr = $it[$field];
+            }
+        }
+
+        if ($score > 0) {
+            $it['_score']        = $score;
+            $it['_matched_attr'] = $matchedAttr;
+            $out[] = $it;
+        }
+    }
+
+    // urutan default (relevansi): skor -> rating -> terbaru
+    usort($out, function($a, $b) {
+        if ($a['_score'] !== $b['_score']) return $b['_score'] <=> $a['_score'];
+        $ra = (float)($a['Rating'] ?? 0); $rb = (float)($b['Rating'] ?? 0);
+        if ($ra !== $rb) return $rb <=> $ra;
+        return ((int)($b['Item_ID'] ?? 0)) <=> ((int)($a['Item_ID'] ?? 0));
+    });
+
+    return array_slice($out, 0, $limit);
+}
+
+/* ------------------------------------------------------------
+** getSearchFacets($items, $activeFilters) — susun opsi filter
+** beserta jumlahnya. Jumlah dihitung "cross-filter": untuk tiap
+** grup, item dihitung setelah filter grup LAIN diterapkan, tapi
+** filter grup itu sendiri diabaikan. Ini mencegah opsi jadi 0
+** (dead-end) dan sesuai perilaku faceted search yang benar.
+** ------------------------------------------------------------ */
+function getSearchFacets($items, $activeFilters = []) {
+    $labels = _facetLabels();
+    $groups = ['kepedasan', 'rasa', 'kategori'];
+    $result = [];
+
+    foreach ($groups as $g) {
+        // item yang lolos semua filter KECUALI grup $g
+        $subset = array_filter($items, function($it) use ($activeFilters, $g) {
+            foreach ($activeFilters as $fg => $vals) {
+                if ($fg === $g || empty($vals)) continue;
+                if (!_itemMatchesFacet($it, $fg, $vals)) return false;
+            }
+            return true;
+        });
+
+        $counts   = [];
+        $labelMap = [];
+        foreach ($subset as $it) {
+            $vals = _facetValuesForItem($it)[$g] ?? [];
+            foreach ($vals as $v) {
+                $v = (string)$v;
+                $counts[$v] = ($counts[$v] ?? 0) + 1;
+                if ($g === 'kategori') {
+                    $labelMap[$v] = $it['category_name'] ?? ('Kategori ' . $v);
+                } else {
+                    $labelMap[$v] = $labels[$g][$v] ?? ucfirst($v);
+                }
+            }
+        }
+
+        // urutan tampilan
+        if ($g === 'kepedasan') {
+            $order = ['tidakpedas' => 0, 'sedang' => 1, 'pedas' => 2];
+            uksort($counts, fn($a, $b) => ($order[$a] ?? 99) <=> ($order[$b] ?? 99));
+        } elseif ($g === 'kategori') {
+            uksort($counts, fn($a, $b) => strcmp($labelMap[$a] ?? '', $labelMap[$b] ?? ''));
+        } else {
+            arsort($counts);
+        }
+
+        $opts = [];
+        foreach ($counts as $val => $cnt) {
+            $opts[] = [
+                'value' => (string)$val,
+                'label' => $labelMap[$val] ?? ucfirst((string)$val),
+                'count' => $cnt,
+            ];
+        }
+        $result[$g] = $opts;
+    }
+    return $result;
+}
+
+/* ------------------------------------------------------------
+** filterItemsByFacets — saring $items sesuai filter aktif.
+** Dalam 1 grup = OR (mis. Pedas ATAU Sedang).
+** Antar grup      = AND (Kepedasan DAN Rasa DAN Kategori).
+** ------------------------------------------------------------ */
+function filterItemsByFacets($items, $activeFilters = []) {
+    return array_values(array_filter($items, function($it) use ($activeFilters) {
+        foreach ($activeFilters as $g => $vals) {
+            if (empty($vals)) continue;
+            if (!_itemMatchesFacet($it, $g, $vals)) return false;
+        }
+        return true;
+    }));
+}
+
+/* ------------------------------------------------------------
+** sortItems — urutkan array item sesuai pilihan sort.
+** 'relevansi' membiarkan urutan dari searchCandidates apa adanya.
+** ------------------------------------------------------------ */
+function sortItems($items, $sort) {
+    switch ($sort) {
+        case 'termurah':
+            usort($items, fn($a, $b) => ((int)$a['Price']) <=> ((int)$b['Price'])); break;
+        case 'termahal':
+            usort($items, fn($a, $b) => ((int)$b['Price']) <=> ((int)$a['Price'])); break;
+        case 'terbaru':
+            usort($items, fn($a, $b) => ((int)$b['Item_ID']) <=> ((int)$a['Item_ID'])); break;
+        case 'rating':
+            usort($items, fn($a, $b) => ((float)($b['_avg_rating'] ?? $b['Rating'] ?? 0)) <=> ((float)($a['_avg_rating'] ?? $a['Rating'] ?? 0))); break;
+        // 'relevansi' -> biarkan
+    }
+    return $items;
+}
+
+/* ------------------------------------------------------------
+** attachRatings — ambil rata-rata rating + jumlah ulasan untuk
+** SEMUA item sekaligus (1 query), lalu tempel ke tiap baris sebagai
+** _avg_rating & _review_count. Dipakai kartu produk di semua halaman.
+** ------------------------------------------------------------ */
+function attachRatings($con, &$items) {
+    if (empty($items)) return;
+    $ids = array_values(array_unique(array_map(fn($x) => (int)$x['Item_ID'], $items)));
+    if (empty($ids)) return;
+    $ph  = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $con->prepare("SELECT item_id, AVG(rating) a, COUNT(*) c FROM comments WHERE status=1 AND item_id IN ($ph) GROUP BY item_id");
+    $stmt->execute($ids);
+    $map = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $map[(int)$r['item_id']] = ['a' => round((float)$r['a'], 1), 'c' => (int)$r['c']];
+    }
+    foreach ($items as &$it) {
+        $id = (int)$it['Item_ID'];
+        $it['_avg_rating']   = $map[$id]['a'] ?? 0;
+        $it['_review_count'] = $map[$id]['c'] ?? 0;
+    }
+    unset($it);
+}
+
+/* ------------------------------------------------------------
+** ratingBadge — potongan HTML bintang + angka untuk kartu produk.
+**   Sudah dinilai  -> bintang oranye + "4.5 (12)"
+**   Belum dinilai  -> bintang abu  + "Belum ada rating"
+** ------------------------------------------------------------ */
+function ratingBadge($item) {
+    $avg  = (float)($item['_avg_rating'] ?? 0);
+    $cnt  = (int)($item['_review_count'] ?? 0);
+    $full = (int)round($avg);
+    $stars = '';
+    for ($i = 1; $i <= 5; $i++) {
+        $stars .= '<span style="color:' . ($cnt > 0 && $i <= $full ? '#F4A261' : '#DDE1EC') . ';">&#9733;</span>';
+    }
+    $out = '<div style="display:flex;align-items:center;gap:5px;margin:2px 0 6px;font-size:12px;">'
+         . '<span style="letter-spacing:1px;line-height:1;">' . $stars . '</span>';
+    if ($cnt > 0) {
+        $out .= '<span style="color:#1B2E5E;font-weight:700;">' . number_format($avg, 1) . '</span>'
+              . '<span style="color:#9A9AB0;">(' . $cnt . ')</span>';
+    } else {
+        $out .= '<span style="color:#9A9AB0;">Belum ada rating</span>';
+    }
+    return $out . '</div>';
+}
+
 function _cbfBuildTFIDF($documents) {
-    $tf = [];
-    foreach ($documents as $id => $doc) {
+    $tf = [];    foreach ($documents as $id => $doc) {
         $words = array_values(_cbfTokenize($doc));
         $total = count($words);
         if ($total === 0) { $tf[$id] = []; continue; }

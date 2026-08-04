@@ -6,6 +6,7 @@ include 'init.php';
 if (isset($_GET['pageid']) && is_numeric($_GET['pageid'])):
 	$category = intval($_GET['pageid']);
 	$allItems = getAllFrom("*", "items", "where Cat_ID = {$category}", "AND Approve = 1", "Item_ID");
+	attachRatings($con, $allItems); // tempel rating asli dari comments
 
 	$stmtCat = $con->prepare("SELECT Name FROM categories WHERE ID = ?");
 	$stmtCat->execute([$category]);
@@ -56,6 +57,7 @@ if (isset($_GET['pageid']) && is_numeric($_GET['pageid'])):
 				</div>
 				<div class="card-body">
 					<div class="card-title"><a href="items.php?itemid=<?php echo $item['Item_ID'] ?>"><?php echo htmlspecialchars($item['Name']) ?></a></div>
+					<?php echo ratingBadge($item) ?>
 					<div class="card-desc"><?php echo htmlspecialchars($item['Description']) ?></div>
 					<div class="card-footer-row">
 						<span class="card-date"><i class="fa fa-calendar-o"></i> <?php echo $item['Add_Date'] ?></span>
