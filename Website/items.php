@@ -9,9 +9,9 @@ $uid    = isset($_SESSION['uid']) ? (int)$_SESSION['uid'] : 0;
 // -------------------------------------------------------
 // Handle add to cart
 // -------------------------------------------------------
-if (isset($_POST['add_to_cart']) && $uid > 0) {
+if (isset($_POST['add_to_cart']) && $uid > 0 && isBuyer()) {
     $qty = max(1, intval($_POST['qty'] ?? 1));
-    // Ambil stok + pemilik produk sekaligus
+    // Ambil ketersediaan + pemilik produk sekaligus
     $stokChk = $con->prepare("SELECT stok, Member_ID FROM items WHERE Item_ID=? AND Approve=1");
     $stokChk->execute([$itemid]);
     $stokData = $stokChk->fetch();
@@ -20,26 +20,28 @@ if (isset($_POST['add_to_cart']) && $uid > 0) {
         if ((int)$stokData['Member_ID'] === $uid) {
             header('Location: items.php?itemid='.$itemid.'&err=own'); exit();
         }
+        // stok>0 = Tersedia, 0 = Habis (model ketersediaan ala GoFood)
         if ($stokData['stok'] > 0) {
-            $qtyMax = min($qty, $stokData['stok']);
             if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
             if (isset($_SESSION['cart'][$itemid])) {
-                $_SESSION['cart'][$itemid]['qty'] = min($_SESSION['cart'][$itemid]['qty'] + $qtyMax, $stokData['stok']);
+                $_SESSION['cart'][$itemid]['qty'] += $qty;   // qty bebas, tak dibatasi stok
             } else {
                 $s = $con->prepare("SELECT * FROM items WHERE Item_ID=? AND Approve=1");
                 $s->execute([$itemid]);
                 $p = $s->fetch();
-                if ($p) $_SESSION['cart'][$itemid] = ['item_id'=>$itemid,'name'=>$p['Name'],'price'=>$p['Price'],'picture'=>$p['picture'],'qty'=>$qtyMax];
+                if ($p) $_SESSION['cart'][$itemid] = ['item_id'=>$itemid,'name'=>$p['Name'],'price'=>$p['Price'],'picture'=>$p['picture'],'qty'=>$qty];
             }
             header('Location: cart.php?added=1'); exit();
         }
+        // kalau Habis, balik dengan pesan
+        header('Location: items.php?itemid='.$itemid.'&err=habis'); exit();
     }
 }
 
 // Increment view count
 $con->prepare("UPDATE items SET view_count = view_count + 1 WHERE Item_ID=?")->execute([$itemid]);
 
-$stmt = $con->prepare("SELECT items.*, categories.Name AS category_name, users.Username FROM items INNER JOIN categories ON categories.ID=items.Cat_ID INNER JOIN users ON users.UserID=items.Member_ID WHERE Item_ID=? AND Approve=1");
+$stmt = $con->prepare("SELECT items.*, categories.Name AS category_name, users.Username, users.alamat AS seller_alamat FROM items INNER JOIN categories ON categories.ID=items.Cat_ID INNER JOIN users ON users.UserID=items.Member_ID WHERE Item_ID=? AND Approve=1");
 $stmt->execute([$itemid]);
 
 if ($stmt->rowCount() > 0):
@@ -161,6 +163,15 @@ if ($stmt->rowCount() > 0):
 
     <p style="color:#57534E;font-size:15px;line-height:1.7;"><?php echo nl2br(htmlspecialchars($item['Description'])) ?></p>
 
+    <!-- ALAMAT PENJUAL (di area deskripsi) -->
+    <?php if (!empty($item['seller_alamat'])): ?>
+    <div style="background:#F7F8FB;border:1px solid #E4E7F0;border-radius:10px;padding:12px 16px;margin:6px 0 10px;font-size:14px;color:#4A4A6A;">
+      <i class="fa fa-map-marker" style="color:#B5272A;"></i>
+      <strong style="color:#1B2E5E;">Alamat Penjual:</strong> <?php echo nl2br(htmlspecialchars($item['seller_alamat'])) ?>
+      <div style="font-size:12px;color:#9A9AB0;margin-top:5px;"><i class="fa fa-whatsapp"></i> Komunikasi & titik ambil (serlok) dilanjutkan via WhatsApp penjual.</div>
+    </div>
+    <?php endif; ?>
+
     <?php if (!empty($item['cbf_rasa']) || !empty($item['cbf_bahan'])): ?>
     <div class="cbf-tags">
       <?php if (!empty($item['cbf_kategori'])) echo '<span class="cbf-tag"><i class="fa fa-tag"></i> '.htmlspecialchars($item['cbf_kategori']).'</span>'; ?>
@@ -174,16 +185,14 @@ if ($stmt->rowCount() > 0):
       <li><i class="fa fa-calendar fa-fw"></i><span class="meta-label">Tanggal</span><?php echo $item['Add_Date'] ?></li>
       <li><i class="fa fa-tags fa-fw"></i><span class="meta-label">Kategori</span><a href="categories.php?pageid=<?php echo $item['Cat_ID'] ?>"><?php echo htmlspecialchars($item['category_name']) ?></a></li>
       <li><i class="fa fa-user fa-fw"></i><span class="meta-label">Penjual</span><?php echo htmlspecialchars($item['Username']) ?></li>
-      <!-- STOK -->
+      <!-- KETERSEDIAAN (model ala GoFood: Tersedia / Habis) -->
       <li>
-        <i class="fa fa-cubes fa-fw"></i>
-        <span class="meta-label">Stok</span>
-        <?php if ($item['stok'] > 10): ?>
-          <span style="color:#1A5C2A;font-weight:600;"><?php echo $item['stok'] ?> tersedia</span>
-        <?php elseif ($item['stok'] > 0): ?>
-          <span style="color:#92400E;font-weight:600;">Hampir habis (<?php echo $item['stok'] ?> tersisa)</span>
+        <i class="fa fa-shopping-bag fa-fw"></i>
+        <span class="meta-label">Ketersediaan</span>
+        <?php if ($item['stok'] > 0): ?>
+          <span style="color:#1A5C2A;font-weight:600;">Tersedia</span>
         <?php else: ?>
-          <span style="color:#9B1C1C;font-weight:600;">Stok habis</span>
+          <span style="color:#9B1C1C;font-weight:600;">Habis</span>
         <?php endif; ?>
       </li>
       <?php if (!empty($item['contact'])): ?>
@@ -196,6 +205,8 @@ if ($stmt->rowCount() > 0):
          ============================================================ -->
     <?php if (isset($_GET['err']) && $_GET['err'] === 'own'): ?>
       <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-info-circle"></i> Ini produk milikmu sendiri — kamu tidak bisa membelinya.</div>
+    <?php elseif (isset($_GET['err']) && $_GET['err'] === 'habis'): ?>
+      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-times-circle"></i> Produk sedang <strong>Habis</strong>.</div>
     <?php endif; ?>
 
     <?php if (!isset($_SESSION['user'])): ?>
@@ -205,16 +216,20 @@ if ($stmt->rowCount() > 0):
         <i class="fa fa-user-circle"></i> Ini <strong>produk milikmu</strong>. Penjual tidak bisa membeli produk sendiri.
         <a href="myItems.php" style="color:#B5272A;font-weight:700;margin-left:6px;">Kelola produk &rarr;</a>
       </div>
+    <?php elseif (!isBuyer()): ?>
+      <div class="alert" style="margin-top:16px;background:#E8ECF5;border:1px solid #C5CEE0;color:#1B2E5E;padding:14px 16px;border-radius:10px;">
+        <i class="fa fa-info-circle"></i> Akun <strong><?php echo roleName(currentGroup()) ?></strong> tidak bisa berbelanja. Belanja hanya untuk akun <strong>Pembeli</strong>.
+      </div>
     <?php elseif ($item['stok'] > 0): ?>
       <form method="POST" style="display:flex;align-items:center;gap:12px;margin-top:16px;">
-        <input type="number" name="qty" value="1" min="1" max="<?php echo $item['stok'] ?>"
+        <input type="number" name="qty" value="1" min="1"
                style="width:70px;padding:10px;border:1.5px solid #DDE1EC;border-radius:8px;text-align:center;font-size:16px;font-weight:600;color:#1B2E5E;">
         <button type="submit" name="add_to_cart" class="btn-submit" style="flex:1;">
           <i class="fa fa-shopping-basket"></i> Tambah ke Keranjang
         </button>
       </form>
     <?php else: ?>
-      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-times-circle"></i> Stok habis, produk tidak tersedia saat ini.</div>
+      <div class="alert alert-danger" style="margin-top:16px;"><i class="fa fa-times-circle"></i> Produk sedang <strong>Habis</strong>, tidak bisa dipesan saat ini.</div>
     <?php endif; ?>
   </div>
 </div>

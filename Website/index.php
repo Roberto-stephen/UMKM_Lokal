@@ -139,8 +139,8 @@ $sort = isset($_GET['sort']) && isset($sortOptions[$_GET['sort']]) ? $_GET['sort
               <div class="card-desc"><?= htmlspecialchars(substr($rec['Description'],0,70)) ?>...</div>
               <div class="card-footer-row">
                 <span style="font-size:11px;color:<?= ($rec['stok']??0)>0?'#1A5C2A':'#9B1C1C' ?>;">
-                  <i class="fa fa-cubes"></i>
-                  <?= ($rec['stok']??0)>0 ? 'Stok: '.($rec['stok']) : 'Habis' ?>
+                  <i class="fa <?= ($rec['stok']??0)>0?'fa-check-circle':'fa-times-circle' ?>"></i>
+                  <?= ($rec['stok']??0)>0 ? 'Tersedia' : 'Habis' ?>
                 </span>
                 <a href="items.php?itemid=<?= $rec['Item_ID'] ?>" class="btn-detail">Lihat &rarr;</a>
               </div>

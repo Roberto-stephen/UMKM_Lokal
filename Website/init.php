@@ -13,6 +13,20 @@
 	if (isset($_SESSION['user'])) {
 		$sessionUser = $_SESSION['user'];
 		$sessionAvatar = $_SESSION['avatar'];
+
+		// Segarkan role (GroupID) & avatar dari database tiap load, supaya
+		// perubahan role (mis. penjual lama di-set GroupID=2) langsung berlaku
+		// tanpa perlu login ulang.
+		if (isset($_SESSION['uid'])) {
+			try {
+				$__g = $con->prepare("SELECT GroupID, avatar FROM users WHERE UserID = ?");
+				$__g->execute([$_SESSION['uid']]);
+				if ($__row = $__g->fetch()) {
+					$_SESSION['GroupID'] = (int)$__row['GroupID'];
+					$sessionAvatar = $__row['avatar'];
+				}
+			} catch (Exception $e) { /* abaikan */ }
+		}
 	}
 
 	// Routes

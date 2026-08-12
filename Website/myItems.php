@@ -3,6 +3,7 @@ ob_start(); session_start();
 $pageTitle = 'Produk Saya';
 if (!isset($_SESSION['user'])) { header('Location: login.php'); exit(); }
 include 'init.php';
+requireSeller(); // halaman khusus Penjual
 
 // Hapus produk
 if (isset($_GET['do']) && $_GET['do']=='delete' && isset($_GET['id'])) {
@@ -13,6 +14,18 @@ if (isset($_GET['do']) && $_GET['do']=='delete' && isset($_GET['id'])) {
         $con->prepare("DELETE FROM items WHERE Item_ID=?")->execute([$id]);
         header('Location: myItems.php?deleted=1'); exit();
     }
+}
+
+// Toggle ketersediaan (Tersedia <-> Habis) — model ala GoFood
+if (isset($_GET['do']) && $_GET['do']=='toggle' && isset($_GET['id'])) {
+    $id = intval($_GET['id']);
+    $chk = $con->prepare("SELECT stok FROM items WHERE Item_ID=? AND Member_ID=?");
+    $chk->execute([$id, $_SESSION['uid']]);
+    if ($row = $chk->fetch()) {
+        $new = ((int)$row['stok'] > 0) ? 0 : 1;
+        $con->prepare("UPDATE items SET stok=? WHERE Item_ID=? AND Member_ID=?")->execute([$new, $id, $_SESSION['uid']]);
+    }
+    header('Location: myItems.php?toggled=1'); exit();
 }
 
 $stmt = $con->prepare("SELECT items.*, categories.Name AS cat_name FROM items INNER JOIN categories ON categories.ID=items.Cat_ID WHERE Member_ID=? ORDER BY Item_ID DESC");
@@ -32,6 +45,15 @@ $myItems = $stmt->fetchAll();
 <?php if (isset($_GET['updated'])): ?>
   <div class="alert alert-success"><i class="fa fa-check-circle"></i> Produk berhasil diperbarui.</div>
 <?php endif; ?>
+<?php if (isset($_GET['toggled'])): ?>
+  <div class="alert alert-success"><i class="fa fa-check-circle"></i> Ketersediaan produk berhasil diubah.</div>
+<?php endif; ?>
+
+<!-- Menu cepat penjual -->
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+  <a href="seller_orders.php" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;text-decoration:none;background:#E8ECF5;color:#1B2E5E;"><i class="fa fa-inbox"></i> Pesanan Masuk</a>
+  <a href="laporan.php" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;text-decoration:none;background:#E8ECF5;color:#1B2E5E;"><i class="fa fa-bar-chart"></i> Laporan Penjualan</a>
+</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
   <h2 style="margin:0;font-size:22px;color:#1B2E5E;">Daftar Produk (<?php echo count($myItems) ?>)</h2>
@@ -53,6 +75,7 @@ $myItems = $stmt->fetchAll();
       <th style="padding:12px 16px;text-align:left;font-weight:600;color:#4A4A6A;">Produk</th>
       <th style="padding:12px 16px;text-align:left;font-weight:600;color:#4A4A6A;">Kategori</th>
       <th style="padding:12px 16px;text-align:right;font-weight:600;color:#4A4A6A;">Harga</th>
+      <th style="padding:12px 16px;text-align:center;font-weight:600;color:#4A4A6A;">Ketersediaan</th>
       <th style="padding:12px 16px;text-align:center;font-weight:600;color:#4A4A6A;">Status</th>
       <th style="padding:12px 16px;text-align:center;font-weight:600;color:#4A4A6A;">Aksi</th>
     </tr>
@@ -73,6 +96,14 @@ $myItems = $stmt->fetchAll();
     <td style="padding:12px 16px;color:#4A4A6A;"><?php echo htmlspecialchars($item['cat_name']) ?></td>
     <td style="padding:12px 16px;text-align:right;font-weight:600;color:#1B2E5E;">Rp <?php echo number_format($item['Price'],0,',','.') ?></td>
     <td style="padding:12px 16px;text-align:center;">
+      <?php $tersedia = ((int)($item['stok'] ?? 0)) > 0; ?>
+      <a href="myItems.php?do=toggle&id=<?php echo $item['Item_ID'] ?>"
+         title="Klik untuk mengubah"
+         style="display:inline-block;text-decoration:none;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;<?php echo $tersedia ? 'background:#EAF5ED;color:#1A5C2A;' : 'background:#FDECEA;color:#9B1C1C;' ?>">
+        <i class="fa <?php echo $tersedia ? 'fa-check-circle' : 'fa-times-circle' ?>"></i> <?php echo $tersedia ? 'Tersedia' : 'Habis' ?>
+      </a>
+    </td>
+    <td style="padding:12px 16px;text-align:center;">
       <?php if ($item['Approve']==1): ?>
         <span style="background:#EAF5ED;color:#1A5C2A;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Aktif</span>
       <?php else: ?>
@@ -80,7 +111,7 @@ $myItems = $stmt->fetchAll();
       <?php endif; ?>
     </td>
     <td style="padding:12px 16px;text-align:center;">
-      <a href="editItem.php?id=<?php echo $item['Item_ID'] ?>" style="background:#E8ECF5;color:#1B2E5E;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;margin-right:4px;"><i class="fa fa-edit"></i> Edit</a>
+      <a href="edititem.php?id=<?php echo $item['Item_ID'] ?>" style="background:#E8ECF5;color:#1B2E5E;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;margin-right:4px;"><i class="fa fa-edit"></i> Edit</a>
       <a href="myItems.php?do=delete&id=<?php echo $item['Item_ID'] ?>" onclick="return confirm('Yakin hapus produk ini?')" style="background:#FDECEA;color:#9B1C1C;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;"><i class="fa fa-trash"></i></a>
     </td>
   </tr>

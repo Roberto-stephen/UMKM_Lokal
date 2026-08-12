@@ -3,6 +3,7 @@ ob_start(); session_start();
 $pageTitle = 'Keranjang Belanja';
 if (!isset($_SESSION['user'])) { header('Location: login.php'); exit(); }
 include 'init.php';
+requireBuyer(); // hanya Pembeli
 if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
 
 // Tambah ke keranjang

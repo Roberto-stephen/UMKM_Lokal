@@ -103,13 +103,14 @@ $pendingItems = $stmtPendingItems->fetchColumn();
           <li style="padding:10px 16px;border-bottom:1px solid #DDE1EC;display:flex;align-items:center;justify-content:space-between;font-size:13px;">
             <span style="color:#1B2E5E;font-weight:500;"><?php echo htmlspecialchars($item['Name']) ?>
               <?php if ($item['Approve']==0): ?><span style="background:#FEF3C7;color:#92400E;padding:1px 7px;border-radius:10px;font-size:10px;margin-left:4px;">Pending</span><?php endif; ?>
-              <span style="font-size:11px;color:#9A9AB0;margin-left:6px;">Stok: <?php echo $item['stok'] ?? '-' ?></span>
+              <?php $tsd = ((int)($item['stok'] ?? 0)) > 0; ?>
+              <span style="font-size:10px;font-weight:700;margin-left:6px;padding:1px 8px;border-radius:10px;<?php echo $tsd?'background:#EAF5ED;color:#1A5C2A;':'background:#FDECEA;color:#9B1C1C;' ?>"><?php echo $tsd?'Tersedia':'Habis' ?></span>
             </span>
             <div style="display:flex;gap:4px;">
               <?php if ($item['Approve']==0): ?>
               <a href="items.php?do=Approve&itemid=<?php echo $item['Item_ID'] ?>" style="background:#EAF5ED;color:#1A5C2A;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;"><i class="fa fa-check"></i> Approve</a>
               <?php endif; ?>
-              <a href="items.php?do=Edit&itemid=<?php echo $item['Item_ID'] ?>" style="background:#B5272A;color:#fff;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;"><i class="fa fa-edit"></i></a>
+              <a href="items.php" title="Kelola / moderasi produk" style="background:#E8ECF5;color:#1B2E5E;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;"><i class="fa fa-gavel"></i></a>
             </div>
           </li>
           <?php endforeach; ?>

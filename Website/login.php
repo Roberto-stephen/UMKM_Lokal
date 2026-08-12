@@ -44,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $password2 = $_POST['password2'];
     $email     = trim($_POST['email']);
     $fullname  = trim($_POST['fullname']);
+    // Role: hanya boleh Pembeli (0) atau Penjual (2)
+    $role      = (($_POST['role'] ?? '0') === '2') ? 2 : 0;
 
     if (strlen($username) < 4)                    $formErrors[] = 'Username minimal 4 karakter.';
     if (empty($password))                          $formErrors[] = 'Password tidak boleh kosong.';
@@ -69,15 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // FIX: RegStatus langsung 1 (aktif) — tidak perlu approval admin.
         // Dulu: RegStatus = 0 (harus diaktifkan admin dulu sebelum bisa login)
         // ------------------------------------------------------------
-        $ins = $con->prepare("INSERT INTO users(Username,Password,Email,FullName,RegStatus,Date,avatar) VALUES(?,?,?,?,1,NOW(),?)");
-        $ins->execute([htmlspecialchars($username), sha1($password), htmlspecialchars($email), htmlspecialchars($fullname), $avatar]);
+        $ins = $con->prepare("INSERT INTO users(Username,Password,Email,FullName,GroupID,RegStatus,Date,avatar) VALUES(?,?,?,?,?,1,NOW(),?)");
+        $ins->execute([htmlspecialchars($username), sha1($password), htmlspecialchars($email), htmlspecialchars($fullname), $role, $avatar]);
 
         // Langsung login-kan user setelah daftar (auto-login)
         $newUserId = $con->lastInsertId();
         $_SESSION['user']    = $username;
         $_SESSION['uid']     = $newUserId;
         $_SESSION['avatar']  = $avatar;
-        $_SESSION['GroupID'] = 0; // default: Pembeli
+        $_SESSION['GroupID'] = $role; // 0 = Pembeli, 2 = Penjual (sesuai pilihan)
 
         header('Location: index.php?welcome=1');
         exit();
@@ -150,6 +152,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="form-group">
           <label>Nama Lengkap</label>
           <input class="form-control" type="text" name="fullname" placeholder="Nama lengkap kamu" required>
+        </div>
+        <div class="form-group">
+          <label>Daftar Sebagai *</label>
+          <div style="display:flex;gap:10px;margin-top:4px;">
+            <label style="flex:1;cursor:pointer;border:1.5px solid #DDE1EC;border-radius:10px;padding:12px;text-align:center;font-size:13px;font-weight:600;color:#1B2E5E;display:block;">
+              <input type="radio" name="role" value="0" checked style="margin-right:6px;">
+              <i class="fa fa-shopping-basket"></i> Pembeli
+            </label>
+            <label style="flex:1;cursor:pointer;border:1.5px solid #DDE1EC;border-radius:10px;padding:12px;text-align:center;font-size:13px;font-weight:600;color:#1B2E5E;display:block;">
+              <input type="radio" name="role" value="2" style="margin-right:6px;">
+              <i class="fa fa-store"></i> Penjual
+            </label>
+          </div>
+          <small style="color:#9A9AB0;font-size:12px;">Pembeli untuk belanja, Penjual untuk berjualan. Pilihan ini tidak bisa diubah sendiri nanti.</small>
         </div>
         <div class="form-group">
           <label>Foto Profil <span style="color:#9A9AB0;font-weight:400;">(opsional)</span></label>

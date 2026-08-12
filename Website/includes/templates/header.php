@@ -27,7 +27,10 @@
 
     <div class="top-right">
       <?php if (isset($_SESSION['user'])): ?>
-        <!-- Cart Icon -->
+        <?php $g = isset($_SESSION['GroupID']) ? (int)$_SESSION['GroupID'] : 0; ?>
+
+        <!-- Cart Icon — HANYA untuk Pembeli -->
+        <?php if ($g === 0): ?>
         <?php $cartCount = isset($_SESSION['cart']) ? array_sum(array_column($_SESSION['cart'],'qty')) : 0; ?>
         <a href="cart.php" style="position:relative;color:#1B2E5E;font-size:20px;padding:4px 8px;">
           <i class="fa fa-shopping-basket"></i>
@@ -35,18 +38,29 @@
           <span style="position:absolute;top:-4px;right:-4px;background:#B5272A;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'DM Sans',sans-serif;"><?php echo $cartCount ?></span>
           <?php endif; ?>
         </a>
+        <?php endif; ?>
+
         <div class="btn-group">
           <span class="btn btn-default dropdown-toggle" style="border:1.5px solid #DDE1EC;font-size:13px;border-radius:30px;padding:6px 16px;color:#1B2E5E;font-weight:600;background:#fff;" data-toggle="dropdown">
             <img src="admin/uploads/avatars/<?php echo htmlspecialchars($sessionAvatar ?? 'default.png') ?>" class="user-avatar" style="width:22px;height:22px;margin-right:6px;">
             <?php echo htmlspecialchars($sessionUser ?? '') ?> <span class="caret"></span>
           </span>
-          <ul class="dropdown-menu dropdown-menu-right" style="border-radius:10px;margin-top:6px;box-shadow:0 8px 32px rgba(27,46,94,.14);border:1px solid #DDE1EC;padding:6px 0;min-width:170px;">
-            <li><a href="profile.php"  style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-user fa-fw" style="color:#1B2E5E;"></i> Profil Saya</a></li>
-            <li><a href="newad.php"    style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-plus fa-fw"  style="color:#1B2E5E;"></i> Tambah Produk</a></li>
-            <li><a href="myItems.php"  style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-tag fa-fw"   style="color:#1B2E5E;"></i> Produk Saya</a></li>
-            <li><a href="orders.php"   style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-clipboard fa-fw" style="color:#1B2E5E;"></i> Pesanan Saya</a></li>
+          <ul class="dropdown-menu dropdown-menu-right" style="border-radius:10px;margin-top:6px;box-shadow:0 8px 32px rgba(27,46,94,.14);border:1px solid #DDE1EC;padding:6px 0;min-width:180px;">
+            <li><a href="profile.php" style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-user fa-fw" style="color:#1B2E5E;"></i> Profil Saya</a></li>
+
+            <?php if ($g === 2): // PENJUAL ?>
+              <li><a href="newad.php"        style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-plus fa-fw" style="color:#1B2E5E;"></i> Tambah Produk</a></li>
+              <li><a href="myItems.php"      style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-tag fa-fw" style="color:#1B2E5E;"></i> Produk Saya</a></li>
+              <li><a href="seller_orders.php" style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-inbox fa-fw" style="color:#1B2E5E;"></i> Pesanan Masuk</a></li>
+              <li><a href="laporan.php"      style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-bar-chart fa-fw" style="color:#1B2E5E;"></i> Laporan Penjualan</a></li>
+            <?php elseif ($g === 1): // ADMIN ?>
+              <li><a href="admin/dashboard.php" style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-cogs fa-fw" style="color:#1B2E5E;"></i> Dashboard Admin</a></li>
+            <?php else: // PEMBELI ?>
+              <li><a href="orders.php" style="padding:9px 18px;font-size:13px;color:#1A1A2E;"><i class="fa fa-clipboard fa-fw" style="color:#1B2E5E;"></i> Pesanan Saya</a></li>
+            <?php endif; ?>
+
             <li role="separator" style="border-top:1px solid #DDE1EC;margin:4px 0;"></li>
-            <li><a href="logout.php"   style="padding:9px 18px;font-size:13px;color:#9B1C1C;"><i class="fa fa-sign-out fa-fw"></i> Keluar</a></li>
+            <li><a href="logout.php" style="padding:9px 18px;font-size:13px;color:#9B1C1C;"><i class="fa fa-sign-out fa-fw"></i> Keluar</a></li>
           </ul>
         </div>
       <?php else: ?>
@@ -78,3 +92,7 @@
     </div>
   </div>
 </nav>
+
+<?php if (!empty($_SESSION['role_flash'])): ?>
+<div class="container" style="margin-top:16px;"><div class="alert alert-danger"><i class="fa fa-lock"></i> <?php echo htmlspecialchars($_SESSION['role_flash']); unset($_SESSION['role_flash']); ?></div></div>
+<?php endif; ?>

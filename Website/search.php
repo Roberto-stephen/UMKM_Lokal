@@ -348,9 +348,11 @@ function kepedasanChip($item) {
                 <div class="card-desc"><?= htmlspecialchars(substr($item['Description'], 0, 80)) ?>...</div>
                 <div class="card-footer-row">
                   <span class="card-date">
-                    <i class="fa fa-cubes"></i>
-                    <?php if (($item['stok'] ?? 0) > 0) echo '<span style="color:#1A5C2A;">Stok: ' . $item['stok'] . '</span>';
-                          else echo '<span style="color:#9B1C1C;">Habis</span>'; ?>
+                    <?php if (($item['stok'] ?? 0) > 0): ?>
+                      <i class="fa fa-check-circle" style="color:#1A5C2A;"></i> <span style="color:#1A5C2A;">Tersedia</span>
+                    <?php else: ?>
+                      <i class="fa fa-times-circle" style="color:#9B1C1C;"></i> <span style="color:#9B1C1C;">Habis</span>
+                    <?php endif; ?>
                   </span>
                   <a href="items.php?itemid=<?= $item['Item_ID'] ?>" class="btn-detail">Lihat &rarr;</a>
                 </div>

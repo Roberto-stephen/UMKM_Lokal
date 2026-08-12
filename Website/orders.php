@@ -106,9 +106,12 @@ $statusColor = [
       <span style="font-size:13px;color:#9A9AB0;">Order #<?php echo $order['order_id'] ?></span>
       <span style="font-size:13px;color:#9A9AB0;margin-left:12px;"><i class="fa fa-clock-o"></i> <?php echo $order['created_at'] ?></span>
     </div>
-    <span style="background:<?php echo $sc['bg'] ?>;color:<?php echo $sc['color'] ?>;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;">
-      <?php echo $order['status'] ?>
-    </span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <a href="invoice.php?order=<?php echo $order['order_id'] ?>" style="font-size:12px;font-weight:600;color:#1B2E5E;background:#E8ECF5;padding:5px 12px;border-radius:8px;text-decoration:none;"><i class="fa fa-file-text-o"></i> Invoice</a>
+      <span style="background:<?php echo $sc['bg'] ?>;color:<?php echo $sc['color'] ?>;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;">
+        <?php echo $order['status'] ?>
+      </span>
+    </div>
   </div>
   <div style="padding:16px 20px;">
     <?php foreach ($oItems as $oi):

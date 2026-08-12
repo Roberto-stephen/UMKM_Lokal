@@ -4,6 +4,7 @@ session_start();
 $pageTitle = 'Tambah Produk';
 if (!isset($_SESSION['user'])) { header('Location: login.php'); exit(); }
 include 'init.php';
+requireSeller(); // halaman khusus Penjual
 
 $errors = []; $success = '';
 
@@ -17,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $cbf_rasa  = trim($_POST['cbf_rasa']);
     $cbf_bahan = trim($_POST['cbf_bahan']);
     $cbf_pedas = trim($_POST['cbf_kepedasan']);
+    $avail     = (($_POST['stok'] ?? '1') === '0') ? 0 : 1; // 1=Tersedia, 0=Habis
 
     if (empty($name))    $errors[] = 'Nama produk wajib diisi.';
     if (empty($desc))    $errors[] = 'Deskripsi wajib diisi.';
@@ -39,8 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     if (empty($errors)) {
-        $stmt = $con->prepare("INSERT INTO items (Name,Description,Price,Add_Date,Country_Made,Status,Rating,Approve,Cat_ID,Member_ID,picture,contact,cbf_kategori,cbf_rasa,cbf_bahan,cbf_kepedasan) VALUES (?,?,?,NOW(),'Indonesia','1',0,0,?,?,?,?,?,?,?,?)");
-        $stmt->execute([htmlspecialchars($name),htmlspecialchars($desc),$price,$cat_id,$_SESSION['uid'],$picture,htmlspecialchars($contact),$cbf_kat,$cbf_rasa,$cbf_bahan,$cbf_pedas]);
+        $stmt = $con->prepare("INSERT INTO items (Name,Description,Price,Add_Date,Country_Made,Status,Rating,Approve,Cat_ID,Member_ID,picture,contact,stok,cbf_kategori,cbf_rasa,cbf_bahan,cbf_kepedasan) VALUES (?,?,?,NOW(),'Indonesia','1',0,0,?,?,?,?,?,?,?,?,?)");
+        $stmt->execute([htmlspecialchars($name),htmlspecialchars($desc),$price,$cat_id,$_SESSION['uid'],$picture,htmlspecialchars($contact),$avail,$cbf_kat,$cbf_rasa,$cbf_bahan,$cbf_pedas]);
         $success = 'Produk berhasil ditambahkan! Menunggu persetujuan admin.';
     }
 }
@@ -92,9 +94,22 @@ $allCats = getAllFrom("*","categories","where parent = 0","","ID","ASC");
   </div>
 </div>
 
-<div class="form-group">
-  <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">NO. KONTAK / WHATSAPP</label>
-  <input class="form-control" type="text" name="contact" placeholder="08123456789" value="<?php echo isset($_POST['contact'])?htmlspecialchars($_POST['contact']):'' ?>">
+<div class="row">
+  <div class="col-md-6">
+    <div class="form-group">
+      <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">NO. KONTAK / WHATSAPP</label>
+      <input class="form-control" type="text" name="contact" placeholder="08123456789" value="<?php echo isset($_POST['contact'])?htmlspecialchars($_POST['contact']):'' ?>">
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="form-group">
+      <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">KETERSEDIAAN</label>
+      <select class="form-control" name="stok">
+        <option value="1" <?php echo (($_POST['stok'] ?? '1')!=='0')?'selected':'' ?>>Tersedia</option>
+        <option value="0" <?php echo (($_POST['stok'] ?? '1')==='0')?'selected':'' ?>>Habis</option>
+      </select>
+    </div>
+  </div>
 </div>
 
 <div class="form-group">

@@ -3,14 +3,22 @@ ob_start(); session_start();
 $pageTitle = 'Checkout';
 if (!isset($_SESSION['user'])) { header('Location: login.php'); exit(); }
 include 'init.php';
+requireBuyer(); // hanya Pembeli yang bisa checkout
 if (empty($_SESSION['cart'])) { header('Location: cart.php'); exit(); }
 
 $cart  = $_SESSION['cart'];
 $total = array_sum(array_map(fn($i) => $i['price'] * $i['qty'], $cart));
 $errors = [];
 
-// Semua pesanan = ambil sendiri (self-pickup). Tidak ada input alamat.
-// Pembeli hanya memilih WAKTU PENGAMBILAN.
+// Alamat pembeli dari profil (untuk prefill). Wajib diisi sebelum memesan.
+$myAlamat = '';
+try {
+    $ua = $con->prepare("SELECT alamat FROM users WHERE UserID=?");
+    $ua->execute([$_SESSION['uid']]);
+    $myAlamat = (string)($ua->fetchColumn() ?: '');
+} catch (Exception $e) { $myAlamat = ''; }
+
+// Pengambilan = self-pickup (pilih waktu). Alamat pembeli WAJIB sebagai kontak.
 $pickupOptions = [
     'Secepatnya (ASAP)',
     'Siang (11:00-14:00)',
@@ -22,20 +30,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $waktu_ambil  = trim($_POST['waktu_ambil'] ?? '');
     $catatan      = trim($_POST['catatan'] ?? '');
     $metode_bayar = trim($_POST['metode_bayar'] ?? '');
+    $alamatUser   = trim($_POST['alamat'] ?? '');   // alamat pembeli (WAJIB)
 
+    if ($alamatUser === '')                          $errors[] = 'Alamat wajib diisi sebelum memesan.';
     if (!in_array($waktu_ambil, $pickupOptions, true)) $errors[] = 'Waktu pengambilan wajib dipilih.';
     if (empty($metode_bayar)) $errors[] = 'Metode pembayaran wajib dipilih.';
 
-    // Disimpan ke kolom 'alamat' yang sudah ada (nullable) sebagai info pickup.
-    $alamat = 'Ambil Sendiri - ' . $waktu_ambil;
+    // orders.alamat = alamat pembeli; waktu ambil disimpan di catatan.
+    $alamat  = $alamatUser;
+    $catatan = 'Ambil: ' . $waktu_ambil . ($catatan !== '' ? ' — ' . $catatan : '');
 
-    // Validasi stok + BLOKIR produk milik sendiri
+    // Validasi ketersediaan (Habis) + BLOKIR produk milik sendiri
     foreach ($cart as $ci) {
         $stmtStok = $con->prepare("SELECT stok, Name, Member_ID FROM items WHERE Item_ID=?");
         $stmtStok->execute([$ci['item_id']]);
         $produk = $stmtStok->fetch();
-        if ($produk && $produk['stok'] < $ci['qty']) {
-            $errors[] = "Stok '{$produk['Name']}' tidak cukup. Tersisa: {$produk['stok']} pcs.";
+        if ($produk && $produk['stok'] <= 0) {
+            $errors[] = "Produk '{$produk['Name']}' sedang Habis. Silakan hapus dari keranjang.";
         }
         // Penjual tidak boleh membeli produknya sendiri
         if ($produk && (int)$produk['Member_ID'] === (int)($_SESSION['uid'] ?? 0)) {
@@ -70,12 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $ins->execute([$_SESSION['uid'], $total, $status, $metode_bayar, $bukti_bayar, $catatan, $alamat]);
         $order_id = $con->lastInsertId();
 
-        // Simpan order items & kurangi stok
-        $insItem   = $con->prepare("INSERT INTO order_items (order_id,item_id,qty,harga) VALUES (?,?,?,?)");
-        $kurangStok = $con->prepare("UPDATE items SET stok = stok - ? WHERE Item_ID = ? AND stok >= ?");
+        // Simpan alamat ke profil pembeli agar otomatis terisi di pesanan berikutnya
+        try { $con->prepare("UPDATE users SET alamat=? WHERE UserID=?")->execute([htmlspecialchars($alamatUser), $_SESSION['uid']]); }
+        catch (Exception $e) { /* abaikan */ }
+
+        // Simpan order items (stok tidak dikurangi — model ketersediaan Tersedia/Habis)
+        $insItem = $con->prepare("INSERT INTO order_items (order_id,item_id,qty,harga) VALUES (?,?,?,?)");
         foreach ($cart as $ci) {
             $insItem->execute([$order_id, $ci['item_id'], $ci['qty'], $ci['price']]);
-            $kurangStok->execute([$ci['qty'], $ci['item_id'], $ci['qty']]);
         }
 
         unset($_SESSION['cart']);
@@ -99,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
       <!-- INFO PICKUP -->
       <div style="background:#EAF5ED;border:1px solid #A3D4AE;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#1A5C2A;">
         <i class="fa fa-shopping-bag" style="color:#1A5C2A;"></i>
-        <strong>Ambil Sendiri (Self-Pickup):</strong> Semua pesanan diambil langsung di tempat penjual. Tidak perlu isi alamat — cukup pilih waktu pengambilan.
+        <strong>Ambil Sendiri (Self-Pickup):</strong> Pesanan diambil di tempat penjual. Isi <strong>alamat</strong> kamu sebagai data kontak, lalu pilih waktu pengambilan.
       </div>
 
       <!-- INFO COD -->
@@ -109,6 +122,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
       </div>
 
       <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+          <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">ALAMAT *</label>
+          <textarea class="form-control" name="alamat" rows="2" required placeholder="Contoh: Jl. Melati No. 10, Karawaci, Tangerang" style="resize:vertical;"><?php echo htmlspecialchars($_POST['alamat'] ?? $myAlamat) ?></textarea>
+          <small style="color:#9A9AB0;font-size:12px;">Wajib diisi. Alamat tersimpan ke profil untuk pesanan berikutnya.</small>
+        </div>
+
         <div class="form-group">
           <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">WAKTU PENGAMBILAN *</label>
           <select class="form-control" name="waktu_ambil" required>

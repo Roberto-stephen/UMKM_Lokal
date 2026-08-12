@@ -464,6 +464,32 @@ function ratingBadge($item) {
     return $out . '</div>';
 }
 
+/* ------------------------------------------------------------
+** ROLE HELPERS — pemisahan pembeli / penjual / admin.
+**   GroupID: 0 = Pembeli, 1 = Admin, 2 = Penjual
+** ------------------------------------------------------------ */
+function currentGroup() { return isset($_SESSION['GroupID']) ? (int)$_SESSION['GroupID'] : 0; }
+function isSeller()     { return currentGroup() === 2; }
+function isBuyer()      { return currentGroup() === 0; }
+function isAdminRole()  { return currentGroup() === 1; }
+function roleName($g) {
+    $g = (int)$g;
+    return $g === 1 ? 'Admin' : ($g === 2 ? 'Penjual' : 'Pembeli');
+}
+/* requireSeller/requireBuyer: hentikan akses halaman jika role tak sesuai */
+function requireSeller() {
+    if (!isSeller()) {
+        $_SESSION['role_flash'] = 'Halaman ini khusus untuk akun Penjual.';
+        header('Location: index.php'); exit();
+    }
+}
+function requireBuyer() {
+    if (!isBuyer()) {
+        $_SESSION['role_flash'] = 'Akun Penjual tidak bisa berbelanja. Gunakan akun Pembeli.';
+        header('Location: index.php'); exit();
+    }
+}
+
 function _cbfBuildTFIDF($documents) {
     $tf = [];    foreach ($documents as $id => $doc) {
         $words = array_values(_cbfTokenize($doc));

@@ -3,6 +3,7 @@ ob_start(); session_start();
 $pageTitle = 'Pesanan Masuk';
 if (!isset($_SESSION['user'])) { header('Location: login.php'); exit(); }
 include 'init.php';
+requireSeller(); // halaman khusus Penjual
 
 // Aksi konfirmasi / selesai
 if (isset($_GET['action']) && isset($_GET['id'])) {
@@ -19,12 +20,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         } elseif ($action == 'selesai') {
             $con->prepare("UPDATE orders SET status='Selesai' WHERE order_id=? AND status IN ('Diproses')")->execute([$oid]);
         } elseif ($action == 'tolak') {
-            // Kembalikan stok
-            $oItems = $con->prepare("SELECT * FROM order_items WHERE order_id=?");
-            $oItems->execute([$oid]);
-            foreach ($oItems->fetchAll() as $oi) {
-                $con->prepare("UPDATE items SET stok=stok+? WHERE Item_ID=?")->execute([$oi['qty'], $oi['item_id']]);
-            }
+            // Model ketersediaan: tidak ada stok yang perlu dikembalikan
             $con->prepare("UPDATE orders SET status='Dibatalkan' WHERE order_id=?")->execute([$oid]);
         }
     }
@@ -117,9 +113,12 @@ $totalAll = array_sum($counts);
       <span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-left:6px;">COD</span>
       <?php endif; ?>
     </div>
-    <span style="background:<?php echo $sc['bg'] ?>;color:<?php echo $sc['color'] ?>;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;">
-      <i class="fa <?php echo $sc['icon'] ?>"></i> <?php echo $order['status'] ?>
-    </span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <a href="invoice.php?order=<?php echo $order['order_id'] ?>" style="font-size:11px;font-weight:600;color:#1B2E5E;background:#E8ECF5;padding:4px 10px;border-radius:8px;text-decoration:none;"><i class="fa fa-file-text-o"></i> Invoice</a>
+      <span style="background:<?php echo $sc['bg'] ?>;color:<?php echo $sc['color'] ?>;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;">
+        <i class="fa <?php echo $sc['icon'] ?>"></i> <?php echo $order['status'] ?>
+      </span>
+    </div>
   </div>
 
   <!-- DETAIL PESANAN -->
@@ -177,7 +176,7 @@ $totalAll = array_sum($counts);
 
         <!-- Tolak (untuk yang belum diproses) -->
         <?php if (in_array($order['status'],['Belum Dibayar','Menunggu Konfirmasi'])): ?>
-        <a href="seller_orders.php?action=tolak&id=<?php echo $order['order_id'] ?>" onclick="return confirm('Tolak & batalkan pesanan ini? Stok akan dikembalikan.')"
+        <a href="seller_orders.php?action=tolak&id=<?php echo $order['order_id'] ?>" onclick="return confirm('Tolak & batalkan pesanan ini?')"
            style="background:#FDECEA;color:#9B1C1C;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;">
           <i class="fa fa-times"></i> Tolak
         </a>

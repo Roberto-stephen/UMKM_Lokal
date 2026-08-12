@@ -71,12 +71,16 @@ $totalUlasan  = $con->prepare("SELECT COUNT(*) FROM comments WHERE user_id=?"); 
       <a href="editProfil.php" class="btn-submit" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px;">
         <i class="fa fa-edit"></i> Edit Profil
       </a>
+      <?php if ((int)$info['GroupID'] === 2): // PENJUAL ?>
+      <a href="seller_orders.php" style="display:block;text-align:center;font-size:13px;color:#1A5C2A;font-weight:600;padding:8px;border:1.5px solid #A3D4AE;border-radius:30px;text-decoration:none;background:#EAF5ED;">
+        <i class="fa fa-inbox"></i> Pesanan Masuk
+      </a>
+      <a href="laporan.php" style="display:block;text-align:center;font-size:13px;color:#1B2E5E;font-weight:600;padding:8px;border:1.5px solid #DDE1EC;border-radius:30px;text-decoration:none;margin-top:8px;">
+        <i class="fa fa-bar-chart"></i> Laporan Penjualan
+      </a>
+      <?php else: // PEMBELI ?>
       <a href="orders.php" style="display:block;text-align:center;font-size:13px;color:#1B2E5E;font-weight:600;padding:8px;border:1.5px solid #DDE1EC;border-radius:30px;text-decoration:none;">
         <i class="fa fa-clipboard"></i> Pesanan Saya
-      </a>
-      <?php if ($info['GroupID']==2): ?>
-      <a href="seller_orders.php" style="display:block;text-align:center;font-size:13px;color:#1A5C2A;font-weight:600;padding:8px;border:1.5px solid #A3D4AE;border-radius:30px;text-decoration:none;margin-top:8px;background:#EAF5ED;">
-        <i class="fa fa-inbox"></i> Pesanan Masuk
       </a>
       <?php endif; ?>
     </div>
@@ -98,6 +102,7 @@ $totalUlasan  = $con->prepare("SELECT COUNT(*) FROM comments WHERE user_id=?"); 
   <!-- KONTEN UTAMA -->
   <div class="col-md-8">
 
+    <?php if ((int)$info['GroupID'] === 2): // Produk Saya khusus Penjual ?>
     <!-- PRODUK SAYA -->
     <div style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -133,7 +138,9 @@ $totalUlasan  = $con->prepare("SELECT COUNT(*) FROM comments WHERE user_id=?"); 
         <div style="margin-top:12px;text-align:right;"><a href="myItems.php" style="font-size:13px;color:#1B2E5E;font-weight:600;">Lihat semua produk →</a></div>
       <?php endif; ?>
     </div>
+    <?php endif; ?>
 
+    <?php if ((int)$info['GroupID'] !== 2): // Ulasan khusus Pembeli ?>
     <!-- ULASAN TERAKHIR -->
     <div style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(27,46,94,.08);border:1px solid #DDE1EC;">
       <h3 style="margin:0 0 16px;font-size:18px;color:#1B2E5E;">Ulasan Terakhir</h3>
@@ -153,6 +160,7 @@ $totalUlasan  = $con->prepare("SELECT COUNT(*) FROM comments WHERE user_id=?"); 
         <?php endforeach; ?>
       <?php endif; ?>
     </div>
+    <?php endif; ?>
 
   </div>
 </div>

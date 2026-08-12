@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username = trim($_POST['username']);
     $email    = trim($_POST['email']);
     $fullname = trim($_POST['fullname']);
+    $alamat   = trim($_POST['alamat'] ?? '');
     $newpass  = $_POST['newpassword'];
 
     if (strlen($username) < 4) $errors[] = 'Username minimal 4 karakter.';
@@ -47,8 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     if (empty($errors)) {
         $passVal = !empty($newpass) ? sha1($newpass) : $row['Password'];
-        $upd = $con->prepare("UPDATE users SET Username=?,Email=?,FullName=?,Password=?,avatar=? WHERE UserID=?");
-        $upd->execute([htmlspecialchars($username), htmlspecialchars($email), htmlspecialchars($fullname), $passVal, $avatar, $userid]);
+        $upd = $con->prepare("UPDATE users SET Username=?,Email=?,FullName=?,alamat=?,Password=?,avatar=? WHERE UserID=?");
+        $upd->execute([htmlspecialchars($username), htmlspecialchars($email), htmlspecialchars($fullname), htmlspecialchars($alamat), $passVal, $avatar, $userid]);
         $_SESSION['user']   = $username;
         $_SESSION['avatar'] = $avatar;
         $success = 'Profil berhasil diperbarui!';
@@ -107,6 +108,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="form-group">
       <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">EMAIL *</label>
       <input class="form-control" type="email" name="email" value="<?php echo htmlspecialchars($row['Email']) ?>" required>
+    </div>
+
+    <div class="form-group">
+      <label style="font-size:12px;font-weight:600;color:#4A4A6A;display:block;margin-bottom:5px;">ALAMAT
+        <?php if ((int)($row['GroupID'] ?? 0) === 2): ?><span style="color:#9A9AB0;font-weight:400;">(tampil di halaman produkmu)</span><?php endif; ?>
+      </label>
+      <textarea class="form-control" name="alamat" rows="2" placeholder="Contoh: Jl. Melati No. 10, Karawaci, Tangerang" style="resize:vertical;"><?php echo htmlspecialchars($row['alamat'] ?? '') ?></textarea>
+      <?php if ((int)($row['GroupID'] ?? 0) === 2): ?>
+      <small style="color:#9A9AB0;font-size:12px;">Alamat ini muncul di deskripsi tiap produkmu. Komunikasi lanjut & titik ambil via WhatsApp.</small>
+      <?php endif; ?>
     </div>
 
     <div style="border-top:1px solid #DDE1EC;margin:20px 0;"></div>
